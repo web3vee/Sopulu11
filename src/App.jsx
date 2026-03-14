@@ -1,159 +1,136 @@
 import { useState, useCallback } from 'react'
 import './App.css'
 
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+function calculateWinner(squares) {
+  const lines = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6],
+  ]
+  for (const [a, b, c] of lines) {
+    if (squares[a] && squares[a] === squares[b] && squares[a] === squares[c]) {
+      return { winner: squares[a], line: [a, b, c] }
+    }
+  }
+  return null
 }
 
-function createSession() {
-  return {
-    id: generateId(),
-    title: 'New Session',
-    messages: [],
-    createdAt: new Date().toISOString(),
-  }
+function Square({ value, onClick, highlight }) {
+  return (
+    <button
+      className={`square ${value ? 'filled' : ''} ${highlight ? 'winning' : ''}`}
+      onClick={onClick}
+    >
+      {value && <span className={`mark ${value}`}>{value}</span>}
+    </button>
+  )
 }
 
 function App() {
-  const [sessions, setSessions] = useState(() => {
-    const initial = createSession()
-    return [initial]
-  })
-  const [activeSessionId, setActiveSessionId] = useState(() => sessions[0].id)
-  const [inputValue, setInputValue] = useState('')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [history, setHistory] = useState([Array(9).fill(null)])
+  const [stepNumber, setStepNumber] = useState(0)
+  const [xIsNext, setXIsNext] = useState(true)
+  const [scores, setScores] = useState({ X: 0, O: 0, draws: 0 })
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const current = history[stepNumber]
+  const result = calculateWinner(current)
+  const winner = result?.winner
+  const winningLine = result?.line || []
+  const isDraw = !winner && current.every(Boolean)
 
-  const handleNewSession = useCallback(() => {
-    const newSession = createSession()
-    setSessions((prev) => [newSession, ...prev])
-    setActiveSessionId(newSession.id)
-    setInputValue('')
+  const handleClick = useCallback((i) => {
+    if (current[i] || winner) return
+    const next = current.slice()
+    next[i] = xIsNext ? 'X' : 'O'
+    const newHistory = history.slice(0, stepNumber + 1).concat([next])
+    setHistory(newHistory)
+    setStepNumber(newHistory.length - 1)
+    setXIsNext(!xIsNext)
+
+    const newResult = calculateWinner(next)
+    if (newResult?.winner) {
+      setScores(prev => ({ ...prev, [newResult.winner]: prev[newResult.winner] + 1 }))
+    } else if (next.every(Boolean)) {
+      setScores(prev => ({ ...prev, draws: prev.draws + 1 }))
+    }
+  }, [current, winner, xIsNext, history, stepNumber])
+
+  const handleReset = useCallback(() => {
+    setHistory([Array(9).fill(null)])
+    setStepNumber(0)
+    setXIsNext(true)
   }, [])
 
-  const handleDeleteSession = useCallback(
-    (id) => {
-      setSessions((prev) => {
-        const updated = prev.filter((s) => s.id !== id)
-        if (updated.length === 0) {
-          const fresh = createSession()
-          setActiveSessionId(fresh.id)
-          return [fresh]
-        }
-        if (id === activeSessionId) {
-          setActiveSessionId(updated[0].id)
-        }
-        return updated
-      })
-    },
-    [activeSessionId]
-  )
+  const handleNewGame = useCallback(() => {
+    setHistory([Array(9).fill(null)])
+    setStepNumber(0)
+    setXIsNext(true)
+    setScores({ X: 0, O: 0, draws: 0 })
+  }, [])
 
-  const handleSendMessage = useCallback(
-    (e) => {
-      e.preventDefault()
-      const text = inputValue.trim()
-      if (!text) return
+  const handleUndo = useCallback(() => {
+    if (stepNumber > 0) {
+      setStepNumber(stepNumber - 1)
+      setXIsNext(stepNumber % 2 === 0 ? false : true)
+    }
+  }, [stepNumber])
 
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== activeSessionId) return s
-          const newMessages = [
-            ...s.messages,
-            { id: generateId(), text, sender: 'user', timestamp: new Date().toISOString() },
-          ]
-          return {
-            ...s,
-            messages: newMessages,
-            title: s.messages.length === 0 ? text.slice(0, 30) : s.title,
-          }
-        })
-      )
-      setInputValue('')
-    },
-    [inputValue, activeSessionId]
-  )
+  let status
+  if (winner) {
+    status = <span>Winner: <span className={`mark ${winner}`}>{winner}</span></span>
+  } else if (isDraw) {
+    status = "It's a draw!"
+  } else {
+    status = <span>Next: <span className={`mark ${xIsNext ? 'X' : 'O'}`}>{xIsNext ? 'X' : 'O'}</span></span>
+  }
 
   return (
     <div className="app">
-      <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
-        <div className="sidebar-header">
-          <h2>Sessions</h2>
-          <button className="toggle-btn" onClick={() => setSidebarOpen(false)} title="Close sidebar">
-            &times;
-          </button>
+      <div className="game-container">
+        <h1 className="title">Tic Tac Toe</h1>
+
+        <div className="scoreboard">
+          <div className="score-item">
+            <span className="mark X">X</span>
+            <span className="score-value">{scores.X}</span>
+          </div>
+          <div className="score-item">
+            <span className="score-label">Draw</span>
+            <span className="score-value">{scores.draws}</span>
+          </div>
+          <div className="score-item">
+            <span className="mark O">O</span>
+            <span className="score-value">{scores.O}</span>
+          </div>
         </div>
 
-        <button className="new-session-btn" onClick={handleNewSession}>
-          <span className="plus-icon">+</span>
-          New Session
-        </button>
-
-        <div className="session-list">
-          {sessions.map((session) => (
-            <div
-              key={session.id}
-              className={`session-item ${session.id === activeSessionId ? 'active' : ''}`}
-              onClick={() => setActiveSessionId(session.id)}
-            >
-              <span className="session-title">{session.title}</span>
-              <button
-                className="delete-btn"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleDeleteSession(session.id)
-                }}
-                title="Delete session"
-              >
-                &times;
-              </button>
-            </div>
-          ))}
+        <div className={`status ${winner ? 'winner' : ''} ${isDraw ? 'draw' : ''}`}>
+          {status}
         </div>
-      </aside>
 
-      <main className="main">
-        <header className="main-header">
-          {!sidebarOpen && (
-            <button className="menu-btn" onClick={() => setSidebarOpen(true)} title="Open sidebar">
-              &#9776;
-            </button>
-          )}
-          <h1>{activeSession?.title || 'New Session'}</h1>
-        </header>
-
-        <div className="messages">
-          {activeSession?.messages.length === 0 && (
-            <div className="empty-state">
-              <div className="empty-icon">&#128172;</div>
-              <h3>Start a new conversation</h3>
-              <p>Type a message below to get started.</p>
-            </div>
-          )}
-          {activeSession?.messages.map((msg) => (
-            <div key={msg.id} className={`message ${msg.sender}`}>
-              <div className="message-bubble">{msg.text}</div>
-              <span className="message-time">
-                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
+        <div className="board">
+          {current.map((value, i) => (
+            <Square
+              key={i}
+              value={value}
+              onClick={() => handleClick(i)}
+              highlight={winningLine.includes(i)}
+            />
           ))}
         </div>
 
-        <form className="input-area" onSubmit={handleSendMessage}>
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type a message..."
-            autoFocus
-          />
-          <button type="submit" className="send-btn" disabled={!inputValue.trim()}>
-            Send
+        <div className="controls">
+          <button className="control-btn" onClick={handleUndo} disabled={stepNumber === 0}>
+            Undo
           </button>
-        </form>
-      </main>
+          <button className="control-btn primary" onClick={handleReset}>
+            Restart
+          </button>
+          <button className="control-btn" onClick={handleNewGame}>
+            New Game
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
