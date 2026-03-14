@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import TicTacToe from './TicTacToe'
 import './App.css'
 
 function generateId() {
@@ -22,6 +23,7 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState(() => sessions[0].id)
   const [inputValue, setInputValue] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [view, setView] = useState('chat')
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
 
@@ -90,6 +92,14 @@ function App() {
           New Session
         </button>
 
+        <button
+          className={`game-nav-btn${view === 'game' ? ' active' : ''}`}
+          onClick={() => setView(view === 'game' ? 'chat' : 'game')}
+        >
+          <span className="game-icon">&#9819;</span>
+          {view === 'game' ? 'Back to Chat' : 'Play Tic Tac Toe'}
+        </button>
+
         <div className="session-list">
           {sessions.map((session) => (
             <div
@@ -113,47 +123,51 @@ function App() {
         </div>
       </aside>
 
-      <main className="main">
-        <header className="main-header">
-          {!sidebarOpen && (
-            <button className="menu-btn" onClick={() => setSidebarOpen(true)} title="Open sidebar">
-              &#9776;
+      {view === 'game' ? (
+        <TicTacToe onBack={() => setView('chat')} />
+      ) : (
+        <main className="main">
+          <header className="main-header">
+            {!sidebarOpen && (
+              <button className="menu-btn" onClick={() => setSidebarOpen(true)} title="Open sidebar">
+                &#9776;
+              </button>
+            )}
+            <h1>{activeSession?.title || 'New Session'}</h1>
+          </header>
+
+          <div className="messages">
+            {activeSession?.messages.length === 0 && (
+              <div className="empty-state">
+                <div className="empty-icon">&#128172;</div>
+                <h3>Start a new conversation</h3>
+                <p>Type a message below to get started.</p>
+              </div>
+            )}
+            {activeSession?.messages.map((msg) => (
+              <div key={msg.id} className={`message ${msg.sender}`}>
+                <div className="message-bubble">{msg.text}</div>
+                <span className="message-time">
+                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <form className="input-area" onSubmit={handleSendMessage}>
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Type a message..."
+              autoFocus
+            />
+            <button type="submit" className="send-btn" disabled={!inputValue.trim()}>
+              Send
             </button>
-          )}
-          <h1>{activeSession?.title || 'New Session'}</h1>
-        </header>
-
-        <div className="messages">
-          {activeSession?.messages.length === 0 && (
-            <div className="empty-state">
-              <div className="empty-icon">&#128172;</div>
-              <h3>Start a new conversation</h3>
-              <p>Type a message below to get started.</p>
-            </div>
-          )}
-          {activeSession?.messages.map((msg) => (
-            <div key={msg.id} className={`message ${msg.sender}`}>
-              <div className="message-bubble">{msg.text}</div>
-              <span className="message-time">
-                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <form className="input-area" onSubmit={handleSendMessage}>
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type a message..."
-            autoFocus
-          />
-          <button type="submit" className="send-btn" disabled={!inputValue.trim()}>
-            Send
-          </button>
-        </form>
-      </main>
+          </form>
+        </main>
+      )}
     </div>
   )
 }
