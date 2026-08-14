@@ -57,17 +57,18 @@ cell grid (2.0 units per cell, 216 × 216 units overall):
 | — of which accent-coloured | 3.3% of scene triangles |
 | Animated blocks | **320** (each one costs a draw call, so kept lean for mobile) |
 | Suns | **18** (12 low among the blocks, 6 high in the sky) |
-| Triangles | 110,750 |
-| Draw calls | **426** |
-| Nodes / meshes / materials | 465 / 35 / 21 |
+| Triangles | 113,366 |
+| Draw calls | **445** |
+| Nodes / meshes / materials | 486 / 37 / 23 |
 | Animation length | **24.0 s**, seamless loop |
-| File size | 4.39 MiB |
+| File size | 4.45 MiB |
 
 **Materials** — 8 greys (light grey through near-black) and 6 accents (red,
 blue, green, lime/yellow, magenta, cyan), each with its own roughness and a
 little metalness on some so surfaces do not read uniformly flat. Accent blocks
-are deliberately rare (~4.5% of blocks, 3.3% of scene triangles). Base colours are authored in sRGB
-and converted to linear, since glTF `baseColorFactor` is linear.
+are deliberately rare (~4.5% of blocks, 3.2% of scene triangles). Base colours
+are authored in sRGB and converted to linear, since glTF `baseColorFactor` is
+linear.
 
 **Lighting** — 9 warm point lights (`KHR_lights_punctual`), carried by the low
 suns, pooling light onto nearby block tops with a bounded range for gentle falloff;
@@ -86,6 +87,18 @@ the soft radial falloff has to be built by stacking shells.
 every seam reads as black void, and an inward-facing sky dome carries a
 vertex-coloured horizon gradient using `KHR_materials_unlit`. Both are sized to
 keep the scene's bounding sphere close to the city — see Performance.
+
+**Wireframe gizmos** — under a `Gizmos` node: an octahedral wire marker around
+every sun (parented to the sun, so it drifts with it) and a static amber mesh of
+three survey frustums and three directional-light rays. These are built as real
+tube geometry, not glTF `LINES` primitives: line mode has no controllable width
+(always one device pixel, nearly invisible on a high-DPI phone) and is skipped by
+some importers, Blender's among them. Total cost is ~2,600 triangles and 19 draw
+calls. Delete the `Gizmos` node and the sun `*_Diamond` children to strip them.
+
+Note the frustum markers are deliberately *not* anchored to the three render
+cameras. A camera sits inside its own frustum, so such a gizmo would project
+exactly onto the frame border and draw a glowing rectangle around the viewport.
 
 **Cameras** — three, in this order:
 
@@ -131,14 +144,15 @@ separately.
 
 The scene is tuned so it runs on a phone, not just a desktop GPU.
 
-**426 draw calls, not 9,000.** The 8,700 static blocks are welded into 14
+**445 draw calls, not 9,000.** The 8,700 static blocks are welded into 14
 per-material batched meshes (one mesh per colour, split into primitives of
 ≤64,000 vertices so 16-bit indices stay valid). Only the 320 animated blocks
 remain individual nodes, because in glTF only a node can be animated. Draw
-calls break down as 14 batched city meshes + 320 animated blocks + 90 sun
-primitives + 2 environment.
+calls break down as 14 batched city meshes + 320 animated blocks + 108 sun
+primitives (core, diamond and four glow shells each) + 1 gizmo mesh + 2
+environment.
 
-**110,750 triangles**, down from 153,682, via two cuts that are invisible in
+**113,366 triangles**, down from 153,682, via two cuts that are invisible in
 practice:
 
 - every block's bottom face is dropped — the ground sits a unit below and the
