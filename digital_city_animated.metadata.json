@@ -1,0 +1,78 @@
+{
+  "name": "Digital City \u2014 Animated Block Landscape",
+  "description": "A procedurally generated digital landscape: 9,020 rectangular blocks and plaza tiles forming a dense algorithmic terrain, lit by 18 floating golden suns. 320 of the blocks continuously rise and fall, and every sun drifts on its own multi-frequency path, on a seamless 24-second loop baked into the glTF animation tracks. Fully on-chain-friendly: a single self-contained binary glTF (GLB) with no external textures or dependencies. Terrain, colours, heights and motion are all generated from deterministic seed 20260814.",
+  "image": "ipfs://REPLACE_WITH_YOUR_CID/digital_city_preview.png",
+  "animation_url": "ipfs://REPLACE_WITH_YOUR_CID/digital_city_animated.glb",
+  "background_color": "0B0B10",
+  "attributes": [
+    {
+      "trait_type": "Medium",
+      "value": "Animated 3D (glTF 2.0 binary)"
+    },
+    {
+      "trait_type": "Generation",
+      "value": "Procedural / deterministic seed"
+    },
+    {
+      "trait_type": "Palette",
+      "value": "Greyscale with six accents"
+    },
+    {
+      "trait_type": "Accent Colours",
+      "value": "Red, Blue, Green, Lime, Magenta, Cyan"
+    },
+    {
+      "trait_type": "Motion",
+      "value": "Seamless loop"
+    },
+    {
+      "trait_type": "Terrain Grid",
+      "value": "108x108"
+    },
+    {
+      "trait_type": "Blocks",
+      "value": 9020,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Animated Blocks",
+      "value": 320,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Suns",
+      "value": 18,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Sun Lights",
+      "value": 9,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Loop Seconds",
+      "value": 24,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Triangles",
+      "value": 110750,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Draw Calls",
+      "value": 426,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Cameras",
+      "value": 3,
+      "display_type": "number"
+    },
+    {
+      "trait_type": "Seed",
+      "value": 20260814,
+      "display_type": "number"
+    }
+  ]
+}

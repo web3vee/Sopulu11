@@ -6,6 +6,15 @@ match the supplied reference images. Everything ships as **one self-contained
 binary GLB**: geometry, materials, lights, cameras and animation curves all live
 inside the single file, with no external `.bin`, textures or side-car assets.
 
+## Files
+
+| File | Purpose |
+|---|---|
+| `digital_city_animated.glb` | the artwork — one self-contained binary |
+| `digital_city_animated.metadata.json` | NFT metadata (edit the CID placeholders) |
+| `digital_city_preview.png` | 1400×1400 still for the metadata `image` field |
+| `tools/generate_digital_city.py` | generator + validator |
+
 ## How the scene was generated
 
 `tools/generate_digital_city.py` writes the glTF 2.0 binary directly (Python +
@@ -45,36 +54,38 @@ cell grid (2.0 units per cell, 216 × 216 units overall):
 |---|---|
 | Blocks | **9,020** (4,563 raised blocks + 4,457 flat plaza tiles) |
 | — of which multi-cell footprints | 1,078 |
-| — of which accent-coloured | 410 |
-| Animated blocks | **850** (9% of the block field) |
+| — of which accent-coloured | 3.3% of scene triangles |
+| Animated blocks | **320** (each one costs a draw call, so kept lean for mobile) |
 | Suns | **18** (12 low among the blocks, 6 high in the sky) |
-| Triangles | 153,682 |
-| Nodes / meshes / materials | 9,190 / 23 / 23 |
+| Triangles | 110,750 |
+| Draw calls | **426** |
+| Nodes / meshes / materials | 465 / 35 / 21 |
 | Animation length | **24.0 s**, seamless loop |
-| File size | 1.95 MiB |
+| File size | 4.39 MiB |
 
 **Materials** — 8 greys (light grey through near-black) and 6 accents (red,
 blue, green, lime/yellow, magenta, cyan), each with its own roughness and a
 little metalness on some so surfaces do not read uniformly flat. Accent blocks
-are deliberately rare (~4.5% of the field). Base colours are authored in sRGB
+are deliberately rare (~4.5% of blocks, 3.3% of scene triangles). Base colours are authored in sRGB
 and converted to linear, since glTF `baseColorFactor` is linear.
 
-**Lighting** — 12 warm point lights (`KHR_lights_punctual`), one per low sun,
-pooling light onto nearby block tops with a bounded range for gentle falloff;
+**Lighting** — 9 warm point lights (`KHR_lights_punctual`), carried by the low
+suns, pooling light onto nearby block tops with a bounded range for gentle falloff;
 plus three dim cool directional lights (a steep key, a weak side fill and a
 rim). The key is deliberately top-down: block tops read bright while sides fall
 to near-black, as in the references. Sun cores are emissive with
 `KHR_materials_emissive_strength`, so bloom-capable viewers pick them up as HDR
 highlights.
 
-**Glow** — each sun is a bright emissive core wrapped in six nested translucent
+**Glow** — each sun is a bright emissive core wrapped in four nested translucent
 shells of decreasing alpha. A single shell renders as a hard-edged disc from
 every angle (a sphere has the same optical depth at every impact parameter), so
 the soft radial falloff has to be built by stacking shells.
 
-**Environment** — a large near-black ground plane sits a unit below the block
-feet, so every seam reads as black void, and an inward-facing sky dome carries a
-vertex-coloured horizon gradient using `KHR_materials_unlit`.
+**Environment** — a near-black ground plane sits a unit below the block feet, so
+every seam reads as black void, and an inward-facing sky dome carries a
+vertex-coloured horizon gradient using `KHR_materials_unlit`. Both are sized to
+keep the scene's bounding sphere close to the city — see Performance.
 
 **Cameras** — three, in this order:
 
@@ -97,9 +108,9 @@ Three animation clips are present:
 
 | Clip | Channels | What moves |
 |---|---|---|
-| `DigitalCity_AllMotion` | 868 | everything (suns + blocks) |
+| `DigitalCity_AllMotion` | 338 | everything (suns + blocks) |
 | `SunsFloat` | 18 | suns only |
-| `BlocksRise` | 850 | blocks only |
+| `BlocksRise` | 320 | blocks only |
 
 The combined clip is **first** because many viewers autoplay only clip 0; the
 two isolated clips are there so the suns and the blocks can be driven
@@ -109,28 +120,64 @@ separately.
   with randomised amplitudes, frequencies (1–3 cycles per loop) and phases, so
   no two suns share a speed, direction or phase. Total travel ranges from 1.4 to
   32.9 units per sun, with gentler vertical bobbing than horizontal drift.
-- **Blocks** — 850 blocks rise and fall on `y(t) = A/2 · (1 − cos(ωt + φ))`,
+- **Blocks** — 320 blocks rise and fall on `y(t) = A/2 · (1 − cos(ωt + φ))`,
   which keeps them within `[0, A]` and never sinks them into the ground.
-  Amplitudes span 0.26 to 8.47 units (some barely twitch, some heave several
+  Amplitudes span 0.26 to 8.35 units (some barely twitch, some heave several
   storeys), speeds span 1–6 cycles per loop, and phases are fully randomised.
   Only vertical translation is animated — measured horizontal drift is 2.8e-14
   units.
 
-## Performance
+## Performance (built for phones)
 
-The block field is **instanced, not duplicated**: 9,148 mesh nodes share just
-**4 unique geometries** (a 24-vertex unit cube, an icosphere, a ground quad and
-the sky dome) — a 2,287× reuse factor. Per-block variation is entirely node
-TRS, and each material gets its own lightweight mesh pointing at the *same*
-vertex accessors. That is why 9,000+ blocks fit in under 2 MiB.
+The scene is tuned so it runs on a phone, not just a desktop GPU.
 
-The trade-off: node-level instancing is what plain glTF 2.0 offers, so a viewer
-will issue roughly one draw call per block. That is comfortable on desktop but
-can be heavy on low-end mobile. If you need fewer draw calls, either merge the
-static blocks per material at load time, or have a runtime batch them into an
-InstancedMesh — the shared-geometry layout makes both trivial. `EXT_mesh_gpu_instancing`
-was deliberately *not* used, because it would render the file broken in viewers
-that lack the extension (Blender's importer among them).
+**426 draw calls, not 9,000.** The 8,700 static blocks are welded into 14
+per-material batched meshes (one mesh per colour, split into primitives of
+≤64,000 vertices so 16-bit indices stay valid). Only the 320 animated blocks
+remain individual nodes, because in glTF only a node can be animated. Draw
+calls break down as 14 batched city meshes + 320 animated blocks + 90 sun
+primitives + 2 environment.
+
+**110,750 triangles**, down from 153,682, via two cuts that are invisible in
+practice:
+
+- every block's bottom face is dropped — the ground sits a unit below and the
+  seams are only 0.14 units wide;
+- 7,006 side faces fully covered by a taller neighbour are dropped. A face is
+  only culled when the neighbour is at least 0.45 units taller *and* is not an
+  animated block, so a rising block can never expose a hole.
+
+**Overdraw.** The sun halos are the fill-rate risk on mobile, since they cover
+large screen areas. Each shell is single-sided, halving its cost, and the stack
+is 4 shells rather than 6.
+
+**9 point lights + 3 directional.** three.js evaluates every punctual light per
+fragment in a single pass, so light count is a direct mobile cost. Nine of the
+twelve low suns carry a real light; the other three glow without lighting, which
+is indistinguishable in practice.
+
+**Bounding volume.** The sky dome (radius 200) and ground plane (420 units) are
+sized so the whole scene's bounding sphere is only ~2× the city's. This matters
+because NFT and mobile viewers auto-frame the bounding box and *ignore embedded
+cameras* — an oversized environment would leave the city as a speck. The dome is
+also single-sided with inward winding, so it is invisible from outside while
+still providing the dark sky backdrop.
+
+`EXT_mesh_gpu_instancing` would have been smaller and faster still, but was
+deliberately *not* used: it would render the file broken in any viewer lacking
+the extension, Blender's importer included. Batching gets the same draw-call win
+with universal compatibility, at the cost of file size (4.39 MiB rather than
+~2 MiB, since merged vertices can no longer be shared).
+
+### Phone viewing caveat
+
+Draw calls, triangles, lights, overdraw and index width were all measured and
+are reported by the validator. What could *not* be measured here is real
+frame-rate on real handsets — there is no phone in this build environment. The
+budgets above (426 draw calls, ~111k triangles, 12 lights) are comfortably
+inside what a mid-range 2020-era phone handles at 60 fps, but if you are
+targeting very low-end devices, the cheapest further wins are: drop
+`TARGET_ANIMATED_BLOCKS` from 320, and reduce `SUN_SHELLS` from 4 entries to 2.
 
 ## How to view it
 
@@ -145,6 +192,50 @@ that lack the extension (Blender's importer among them).
 
 For the closest match to the reference images, select `CineCam_Main` and enable
 bloom if your viewer offers it.
+
+**On a phone**, the simplest route is to open the GLB in any mobile browser with
+a `<model-viewer>` page, or send it to a phone and open it with the OS 3D viewer
+(iOS Quick Look needs USDZ, so on iPhone use a browser-based viewer rather than
+the Files app preview).
+
+## Minting it as an NFT
+
+`digital_city_animated.metadata.json` is a ready-to-use ERC-721 / ERC-1155
+metadata document in the schema OpenSea and most marketplaces read. It is
+generated by the same script as the GLB, so its traits cannot drift from the
+actual scene.
+
+Both URIs in it are **placeholders**:
+
+```json
+"image":         "ipfs://REPLACE_WITH_YOUR_CID/digital_city_preview.png",
+"animation_url": "ipfs://REPLACE_WITH_YOUR_CID/digital_city_animated.glb"
+```
+
+To mint:
+
+1. Pin `digital_city_animated.glb` and `digital_city_preview.png` to IPFS
+   (Pinata, nft.storage, web3.storage, or your own node). Pinning both as one
+   directory gives you a single CID for both paths.
+2. Replace `REPLACE_WITH_YOUR_CID` in the metadata with that CID.
+3. Pin the edited metadata JSON, and use *its* `ipfs://…` URI as the token URI
+   in your contract's `tokenURI` / `uri`.
+
+Notes:
+
+- `animation_url` is the field marketplaces use for GLB playback; `image` is the
+  static preview used in grids, search results and social embeds, so it should
+  stay a plain PNG.
+- `background_color` is set to `0B0B10` so marketplaces that honour it frame the
+  dark scene on a dark ground.
+- Marketplace viewers auto-frame the bounding box and ignore embedded cameras, so
+  the default marketplace view is the orbit view, not `CineCam_Main`. The scene
+  was sized specifically for this.
+- The GLB is self-contained, so the one CID is genuinely all a collector needs —
+  nothing is fetched at view time.
+- The traits are descriptive of this one artwork. If you mint a collection,
+  vary `SEED` in the generator: every seed gives a different terrain, colour
+  distribution, skyline and motion, and the metadata regenerates to match.
 
 ## Limitations of GLB animation and runtime behaviour
 
@@ -178,10 +269,14 @@ bloom if your viewer offers it.
 ## Validation
 
 `python3 tools/generate_digital_city.py --validate-only` re-opens the written
-file with an independent parser and runs 18 checks — container integrity,
+file with an independent parser and runs **23 checks**: container integrity,
 geometry, materials, accent blocks, suns and lights, animation tracks,
 interpolation mode, actual sampled sun motion, actual sampled block motion,
 phase desynchronisation, loop closure, self-containment, normals and index
-validity, degenerate scales, instancing, and cameras. All 18 pass. The file was
-additionally re-parsed with `pygltflib` and rendered in three.js
-(headless Chromium) to confirm it loads, animates and looks correct.
+validity, degenerate scales, cameras, and the mobile/NFT budgets — draw calls,
+16-bit index range, light count, single-sided translucency, bounding-volume
+ratio and sky-dome culling. All 23 pass.
+
+The file was additionally re-parsed with `pygltflib` and rendered in three.js
+under headless Chromium — from each embedded camera and from a simulated
+marketplace auto-frame orbit — to confirm it loads, animates and looks correct.

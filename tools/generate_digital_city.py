@@ -48,23 +48,31 @@ KEYS_PER_CYCLE = 8         # cubic-spline keyframes per sine cycle
 
 N_SUNS_LOW = 12            # suns nestled among the blocks (these carry lights)
 N_SUNS_SKY = 6             # big, distant suns in the dark sky
+N_SUN_LIGHTS = 9           # real punctual lights; the rest glow but do not light
 
-TARGET_ANIMATED_BLOCKS = 850
+TARGET_ANIMATED_BLOCKS = 320   # kept low: each one costs a draw call on mobile
 
-SKY_RADIUS = 700.0
-GROUND_EXTENT = 2400.0
+# Static blocks are welded into per-material batches. 16,000 quads = 64,000
+# vertices, which keeps every primitive inside 16-bit index range.
+MAX_FACES_PER_PRIM = 16000
+FACE_CULL_MARGIN = 0.45        # a neighbour this much taller hides a side face
+
+# Sized so the scene's bounding sphere stays close to the city itself. NFT and
+# mobile viewers auto-frame the bounding box and ignore embedded cameras, so an
+# oversized dome or ground plane would leave the city as a speck in the frame.
+SKY_RADIUS = 200.0
+GROUND_EXTENT = 420.0
 
 # Nested translucent shells approximating a soft radial glow. A single shell of
 # uniform alpha renders as a hard-edged disc from every angle (a sphere has the
 # same optical depth at every impact parameter), so the falloff has to come from
-# stacking shells: (radius x core, alpha, emissiveStrength).
+# stacking shells: (radius x core, alpha, emissiveStrength). Single-sided, so
+# each shell costs one layer of overdraw instead of two.
 SUN_SHELLS = [
-    (1.35, 0.200, 1.60),
-    (1.75, 0.130, 1.15),
-    (2.25, 0.085, 0.80),
-    (2.90, 0.050, 0.50),
-    (3.70, 0.028, 0.30),
-    (4.80, 0.014, 0.16),
+    (1.40, 0.260, 1.45),
+    (1.95, 0.150, 0.95),
+    (2.65, 0.080, 0.55),
+    (3.60, 0.035, 0.26),
 ]
 
 # name, eye, target, vertical FOV (degrees). Declared up front so the height
@@ -211,26 +219,27 @@ def smoothstep(edge0, edge1, x):
 # Geometry primitives
 # ---------------------------------------------------------------------------
 
-def unit_cube():
-    """Cube spanning x,z in [-0.5,0.5] and y in [0,1]; 24 verts, flat normals.
+# Unit block faces: x,z span [-0.5, 0.5] and y spans [0, 1], so a node's
+# translation places the block's *foot* and its scale is literally (w, h, d).
+CUBE_FACES = {
+    "+z": ((0, 0, 1),  [(-.5, 0, .5), (.5, 0, .5), (.5, 1, .5), (-.5, 1, .5)]),
+    "-z": ((0, 0, -1), [(.5, 0, -.5), (-.5, 0, -.5), (-.5, 1, -.5), (.5, 1, -.5)]),
+    "+x": ((1, 0, 0),  [(.5, 0, .5), (.5, 0, -.5), (.5, 1, -.5), (.5, 1, .5)]),
+    "-x": ((-1, 0, 0), [(-.5, 0, -.5), (-.5, 0, .5), (-.5, 1, .5), (-.5, 1, -.5)]),
+    "+y": ((0, 1, 0),  [(-.5, 1, .5), (.5, 1, .5), (.5, 1, -.5), (-.5, 1, -.5)]),
+    "-y": ((0, -1, 0), [(-.5, 0, -.5), (.5, 0, -.5), (.5, 0, .5), (-.5, 0, .5)]),
+}
+SIDE_FACES = ("+x", "-x", "+z", "-z")
 
-    Base sits on y=0 so a node's translation places the block's *foot* and its
-    scale is literally (width, height, depth).
-    """
-    faces = [
-        ((0, 0, 1),  [(-.5, 0, .5), (.5, 0, .5), (.5, 1, .5), (-.5, 1, .5)]),
-        ((0, 0, -1), [(.5, 0, -.5), (-.5, 0, -.5), (-.5, 1, -.5), (.5, 1, -.5)]),
-        ((1, 0, 0),  [(.5, 0, .5), (.5, 0, -.5), (.5, 1, -.5), (.5, 1, .5)]),
-        ((-1, 0, 0), [(-.5, 0, -.5), (-.5, 0, .5), (-.5, 1, .5), (-.5, 1, -.5)]),
-        ((0, 1, 0),  [(-.5, 1, .5), (.5, 1, .5), (.5, 1, -.5), (-.5, 1, -.5)]),
-        ((0, -1, 0), [(-.5, 0, -.5), (.5, 0, -.5), (.5, 0, .5), (-.5, 0, .5)]),
-    ]
+
+def unit_cube():
+    """Full 24-vertex / 12-triangle unit block with flat normals."""
     pos, nrm, idx = [], [], []
-    for n, quad in faces:
+    for normal, quad in CUBE_FACES.values():
         base = len(pos)
         for v in quad:
             pos.append(v)
-            nrm.append(n)
+            nrm.append(normal)
         idx += [base, base + 1, base + 2, base, base + 2, base + 3]
     return (np.array(pos, dtype=np.float32), np.array(nrm, dtype=np.float32),
             np.array(idx, dtype=np.uint16))
@@ -495,8 +504,7 @@ def build_scene(out_path: str) -> dict:
             "extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": strength}},
         }
         if alpha is not None:
-            mat["alphaMode"] = "BLEND"
-            mat["doubleSided"] = True
+            mat["alphaMode"] = "BLEND"      # single-sided: half the fill cost
         glb.ext_used.add("KHR_materials_emissive_strength")
         return glb.add_material(mat)
 
@@ -518,7 +526,10 @@ def build_scene(out_path: str) -> dict:
         "pbrMetallicRoughness": {"baseColorFactor": [1.0, 1.0, 1.0, 1.0],
                                  "metallicFactor": 0.0, "roughnessFactor": 1.0},
         "extensions": {"KHR_materials_unlit": {}},
-        "doubleSided": True,
+        # Single-sided with inward-facing winding: it reads as sky from inside
+        # and is invisible from outside, so an orbiting viewer that frames the
+        # bounding box sees straight through to the city instead of a black ball.
+        "doubleSided": False,
     })
     glb.ext_used.add("KHR_materials_unlit")
 
@@ -705,6 +716,8 @@ def build_scene(out_path: str) -> dict:
             return "MediumGray"
         return "MediumGrayWarm"
 
+    records: list[dict] = []
+    final_h = np.zeros((n, n), dtype=np.float64)
     for i in range(n):
         for j in range(n):
             if used[i, j]:
@@ -714,14 +727,11 @@ def build_scene(out_path: str) -> dict:
                 used[i, j] = True
                 h = TILE_HEIGHT
                 foot = PITCH - TILE_GAP
-                w = d = foot
-                cx = j * PITCH - half
-                cz = i * PITCH - half
-                mat = pick_material(i, j, h, True)
-                node = glb.add_node(mesh=cube_mesh[mat],
-                                    translation=[round(cx, 3), 0.0, round(cz, 3)],
-                                    scale=[round(w, 3), round(h, 3), round(d, 3)])
-                tile_nodes.append(node)
+                records.append({"mat": pick_material(i, j, h, True), "tile": True,
+                                "cx": j * PITCH - half, "cz": i * PITCH - half,
+                                "w": foot, "h": h, "d": foot,
+                                "i": i, "j": j, "span_i": 1, "span_j": 1})
+                final_h[i, j] = h
                 stats["tiles"] += 1
                 continue
 
@@ -751,26 +761,112 @@ def build_scene(out_path: str) -> dict:
             if span_i * span_j > 1:
                 stats["wide"] += 1
 
-            w = span_j * PITCH - BLOCK_GAP
-            d = span_i * PITCH - BLOCK_GAP
-            cx = (j + (span_j - 1) * 0.5) * PITCH - half
-            cz = (i + (span_i - 1) * 0.5) * PITCH - half
-            mat = pick_material(i, j, h, False)
-            node = glb.add_node(mesh=cube_mesh[mat],
-                                translation=[round(cx, 3), 0.0, round(cz, 3)],
-                                scale=[round(w, 3), round(h, 3), round(d, 3)])
-            block_nodes.append(node)
+            final_h[i:i + span_i, j:j + span_j] = h
+            records.append({"mat": pick_material(i, j, h, False), "tile": False,
+                            "cx": (j + (span_j - 1) * 0.5) * PITCH - half,
+                            "cz": (i + (span_i - 1) * 0.5) * PITCH - half,
+                            "w": span_j * PITCH - BLOCK_GAP, "h": h,
+                            "d": span_i * PITCH - BLOCK_GAP,
+                            "i": i, "j": j, "span_i": span_i, "span_j": span_j})
             stats["blocks"] += 1
-            if h > 1.0:
-                animated_candidates.append((node, h))
+
+    # ---------------- choose the animated subset ----------------
+    # Picked before geometry is emitted: animated blocks stay as individual nodes
+    # (only nodes can be animated), everything else gets batched.
+    candidates = [k for k, r in enumerate(records) if not r["tile"] and r["h"] > 1.0]
+    n_anim = min(TARGET_ANIMATED_BLOCKS, len(candidates))
+    animated_idx = {candidates[int(c)] for c in
+                    rng.choice(len(candidates), size=n_anim, replace=False)}
+    animated_cell = np.zeros((n, n), dtype=bool)
+    for k in animated_idx:
+        r = records[k]
+        animated_cell[r["i"]:r["i"] + r["span_i"], r["j"]:r["j"] + r["span_j"]] = True
+
+    # ---------------- emit geometry ----------------
+    def side_hidden(r: dict, axis: str) -> bool:
+        """True when a taller static neighbour covers this whole side face."""
+        i, j, si, sj, h = r["i"], r["j"], r["span_i"], r["span_j"], r["h"]
+        if axis == "+x":
+            jj = j + sj
+            cells = [] if jj >= n else [(ii, jj) for ii in range(i, i + si)]
+        elif axis == "-x":
+            jj = j - 1
+            cells = [] if jj < 0 else [(ii, jj) for ii in range(i, i + si)]
+        elif axis == "+z":
+            ii = i + si
+            cells = [] if ii >= n else [(ii, jj) for jj in range(j, j + sj)]
+        else:
+            ii = i - 1
+            cells = [] if ii < 0 else [(ii, jj) for jj in range(j, j + sj)]
+        if not cells:
+            return False                       # field edge: always visible
+        return all(not animated_cell[a, b] and final_h[a, b] >= h + FACE_CULL_MARGIN
+                   for a, b in cells)
+
+    batches: dict[str, tuple[list, list]] = {}
+    block_nodes: list[int] = []
+    animated_records: list[tuple[int, dict]] = []
+    culled = 0
+    for k, r in enumerate(records):
+        if k in animated_idx:
+            node = glb.add_node(name=f"AnimBlock_{len(animated_records):04d}",
+                                mesh=cube_mesh[r["mat"]],
+                                translation=[round(r["cx"], 3), 0.0, round(r["cz"], 3)],
+                                scale=[round(r["w"], 3), round(r["h"], 3), round(r["d"], 3)])
+            block_nodes.append(node)
+            animated_records.append((node, r))
+            continue
+        # Static: bake into the shared per-material batch. The bottom face is
+        # always dropped (the ground sits below and seams are only 0.14 wide),
+        # and side faces fully covered by a taller neighbour are dropped too.
+        faces = ["+y"]
+        for axis in SIDE_FACES:
+            if side_hidden(r, axis):
+                culled += 1
+            else:
+                faces.append(axis)
+        pos_out, nrm_out = batches.setdefault(r["mat"], ([], []))
+        for face in faces:
+            normal, quad = CUBE_FACES[face]
+            for vx, vy, vz in quad:
+                pos_out.append((r["cx"] + vx * r["w"], vy * r["h"], r["cz"] + vz * r["d"]))
+                nrm_out.append(normal)
+
+    batch_nodes: list[int] = []
+    draw_calls = 0
+    merged_faces = 0
+    for mat_name, (pos_list, nrm_list) in sorted(batches.items()):
+        if not pos_list:
+            continue
+        pos_all = np.asarray(pos_list, dtype=np.float32)
+        nrm_all = np.asarray(nrm_list, dtype=np.float32)
+        nfaces = len(pos_all) // 4
+        merged_faces += nfaces
+        prims = []
+        for start in range(0, nfaces, MAX_FACES_PER_PRIM):
+            count = min(MAX_FACES_PER_PRIM, nfaces - start)
+            sub_p = pos_all[start * 4: (start + count) * 4]
+            sub_n = nrm_all[start * 4: (start + count) * 4]
+            base = (np.arange(count, dtype=np.uint16) * 4)
+            idx = np.empty(count * 6, dtype=np.uint16)
+            idx[0::6], idx[1::6], idx[2::6] = base, base + 1, base + 2
+            idx[3::6], idx[4::6], idx[5::6] = base, base + 2, base + 3
+            prims.append({
+                "attributes": {"POSITION": glb.add_float_accessor(sub_p, "VEC3", True),
+                               "NORMAL": glb.add_float_accessor(sub_n, "VEC3")},
+                "indices": glb.add_accessor(
+                    glb.add_view(idx.tobytes(), ELEMENT_ARRAY_BUFFER),
+                    USHORT, len(idx), "SCALAR"),
+                "material": MAT_IDX[mat_name]})
+        draw_calls += len(prims)
+        mesh = glb.add_mesh({"name": f"CityBatch_{mat_name}", "primitives": prims})
+        batch_nodes.append(glb.add_node(name=f"CityBatch_{mat_name}", mesh=mesh))
 
     # ---------------- animation: rising / falling blocks ----------------
     baker = AnimationBaker(glb)
-    n_anim = min(TARGET_ANIMATED_BLOCKS, len(animated_candidates))
-    chosen = rng.choice(len(animated_candidates), size=n_anim, replace=False)
     anim_amplitudes = []
-    for pick in chosen:
-        node, h = animated_candidates[int(pick)]
+    for node, rec in animated_records:
+        h = rec["h"]
         roll = rng.random()
         if roll < 0.22:                       # barely moves
             amp = float(rng.uniform(0.25, 0.8))
@@ -784,7 +880,6 @@ def build_scene(out_path: str) -> dict:
         # y(t) = amp/2 * (1 - cos(w t + phase))  ->  stays within [0, amp]
         y = SineSum(amp * 0.5, [(cycles, -amp * 0.5, phase + math.pi / 2.0)])
         baker.bake_translation(node, (SineSum(tx, []), y, SineSum(tz, [])), "blocks")
-        glb.nodes[node]["name"] = f"AnimBlock_{node}"
         anim_amplitudes.append(amp)
 
     # ---------------- suns ----------------
@@ -855,7 +950,7 @@ def build_scene(out_path: str) -> dict:
                 scale=[round(radius * scale * glow, 4)] * 3))
         # Only the low suns carry punctual lights: they are what pools warm light
         # onto nearby block tops. The sky suns stay purely emissive, as in the refs.
-        if not sky:
+        if not sky and len(glb.lights) < N_SUN_LIGHTS:
             intensity = 58.0 + 120.0 * radius
             rng_range = 22.0 + 20.0 * radius
             glb.lights.append({
@@ -900,7 +995,7 @@ def build_scene(out_path: str) -> dict:
     for cname, eye, target, yfov_deg in CAMERAS:
         glb.cameras.append({"name": cname, "type": "perspective",
                             "perspective": {"yfov": round(math.radians(yfov_deg), 6),
-                                            "znear": 0.35, "zfar": 2400.0}})
+                                            "znear": 0.35, "zfar": 900.0}})
         camera_nodes.append(glb.add_node(
             name=cname, camera=len(glb.cameras) - 1,
             translation=[round(float(v), 3) for v in eye],
@@ -916,7 +1011,7 @@ def build_scene(out_path: str) -> dict:
                        translation=[0.0, 0.0, 0.0], scale=[SKY_RADIUS] * 3)
 
     # ---------------- hierarchy ----------------
-    terrain_node = glb.add_node(name="Terrain", children=block_nodes + tile_nodes)
+    terrain_node = glb.add_node(name="Terrain", children=batch_nodes + block_nodes)
     suns_node = glb.add_node(name="Suns", children=sun_group_nodes)
     lighting_node = glb.add_node(name="FillLighting", children=fill_nodes)
     cameras_node = glb.add_node(name="Cameras", children=camera_nodes)
@@ -933,18 +1028,20 @@ def build_scene(out_path: str) -> dict:
         baker.make_animation("BlocksRise", ("blocks",)),
     ]
 
+    sun_draws = len(sun_group_nodes) * (1 + len(SUN_SHELLS))
     stats.update({
         "grid": f"{n}x{n}",
-        "block_nodes": len(block_nodes),
-        "tile_nodes": len(tile_nodes),
+        "static_blocks_batched": len(records) - n_anim,
         "animated_blocks": n_anim,
+        "batched_faces": merged_faces,
+        "faces_culled_as_hidden": culled,
         "suns": len(sun_group_nodes),
-        "sun_lights": N_SUNS_LOW,
+        "sun_lights": min(N_SUN_LIGHTS, N_SUNS_LOW),
         "loop_seconds": LOOP,
         "total_nodes": len(glb.nodes),
-        "triangles": (len(block_nodes) + len(tile_nodes)) * 12
-                     + len(sun_group_nodes) * (1 + len(SUN_SHELLS)) * (len(sidx) // 3)
-                     + len(didx) // 3 + 2,
+        "triangles": merged_faces * 2 + n_anim * 12
+                     + sun_draws * (len(sidx) // 3) + len(didx) // 3 + 2,
+        "draw_calls": draw_calls + n_anim + sun_draws + 2,
         "amp_min": round(min(anim_amplitudes), 2),
         "amp_max": round(max(anim_amplitudes), 2),
     })
@@ -1014,6 +1111,23 @@ def _sample_cubic(times: np.ndarray, values: np.ndarray, t: float) -> np.ndarray
             + (-2 * s3 + 3 * s2) * p1 + (s3 - s2) * m1)
 
 
+def _node_matrix(nd: dict) -> np.ndarray:
+    """Compose a node's TRS into a 4x4 matrix (glTF order: T * R * S)."""
+    if "matrix" in nd:
+        return np.array(nd["matrix"], dtype=np.float64).reshape(4, 4).T
+    m = np.eye(4)
+    if "rotation" in nd:
+        x, y, z, w = nd["rotation"]
+        m[:3, :3] = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]]
+    if "scale" in nd:
+        m[:3, :3] = m[:3, :3] @ np.diag(nd["scale"])
+    if "translation" in nd:
+        m[:3, 3] = nd["translation"]
+    return m
+
+
 def validate(path: str) -> int:
     gltf, blob = _read_glb(path)
     checks: list[tuple[str, bool, str]] = []
@@ -1025,13 +1139,19 @@ def validate(path: str) -> int:
     check("GLB re-opens, header consistent", True, f"{os.path.getsize(path):,} bytes")
     meshes, nodes = gltf.get("meshes", []), gltf.get("nodes", [])
     mesh_nodes = [nd for nd in nodes if "mesh" in nd]
-    prim_count = sum(len(m["primitives"]) for m in meshes)
     tris = 0
+    draw_calls = 0
     for nd in mesh_nodes:
         for prim in meshes[nd["mesh"]]["primitives"]:
             tris += gltf["accessors"][prim["indices"]]["count"] // 3
-    check("geometry present", len(mesh_nodes) > 1000 and tris > 50000,
-          f"{len(mesh_nodes):,} mesh nodes, {tris:,} triangles, {prim_count} primitives")
+            draw_calls += 1
+    batch_nodes = [nd for nd in mesh_nodes if nd.get("name", "").startswith("CityBatch_")]
+    anim_block_nodes = [nd for nd in mesh_nodes if nd.get("name", "").startswith("AnimBlock_")]
+    batch_tris = sum(gltf["accessors"][p["indices"]]["count"] // 3
+                     for nd in batch_nodes for p in meshes[nd["mesh"]]["primitives"])
+    check("geometry present", tris > 50000 and len(batch_nodes) > 5,
+          f"{tris:,} triangles across {draw_calls} primitives, "
+          f"{len(batch_nodes)} batched city meshes, {len(mesh_nodes)} mesh nodes")
 
     # 3. materials, all referenced and complete
     mats = gltf.get("materials", [])
@@ -1046,11 +1166,14 @@ def validate(path: str) -> int:
 
     # 4. coloured blocks
     accents = [i for i, m in enumerate(mats) if m.get("name", "").startswith("Accent")]
-    accent_nodes = sum(1 for nd in mesh_nodes
-                       for p in meshes[nd["mesh"]]["primitives"]
-                       if p.get("material") in accents)
-    check("coloured accent blocks present", len(accents) == 6 and accent_nodes > 100,
-          f"{len(accents)} accent materials on {accent_nodes:,} blocks")
+    accent_tris = sum(gltf["accessors"][p["indices"]]["count"] // 3
+                      for nd in mesh_nodes for p in meshes[nd["mesh"]]["primitives"]
+                      if p.get("material") in accents)
+    accent_names = sorted(mats[i]["name"][6:] for i in accents)
+    check("coloured accent blocks present",
+          len(accents) == 6 and accent_tris > 800 and accent_tris < tris * 0.12,
+          f"{', '.join(accent_names)} — {accent_tris:,} triangles "
+          f"({accent_tris * 100 / max(tris, 1):.1f}% of the scene, deliberately rare)")
 
     # 5. glowing suns
     suns = [i for i, nd in enumerate(nodes)
@@ -1097,12 +1220,15 @@ def validate(path: str) -> int:
     blk_rise = np.array([np.ptp(s[:, 1]) for _n, s, _d in probes["blocks"]])
     blk_horiz = np.array([max(np.ptp(s[:, 0]), np.ptp(s[:, 2])) for _n, s, _d in probes["blocks"]])
     check("selected blocks move vertically",
-          len(blk_rise) > 500 and blk_rise.min() > 0.05 and blk_horiz.max() < 1e-4,
+          len(blk_rise) > 200 and blk_rise.min() > 0.05 and blk_horiz.max() < 1e-4,
           f"{len(blk_rise)} blocks, rise {blk_rise.min():.2f}-{blk_rise.max():.2f} units, "
           f"horizontal drift {blk_horiz.max():.1e}")
-    check("animated blocks are a subset of all blocks",
-          0 < len(blk_rise) < len(mesh_nodes) * 0.25,
-          f"{len(blk_rise):,} of {len(mesh_nodes):,} mesh nodes")
+    anim_tris = sum(gltf["accessors"][p["indices"]]["count"] // 3
+                    for nd in anim_block_nodes for p in meshes[nd["mesh"]]["primitives"])
+    check("animated blocks are a subset of the block field",
+          0 < len(blk_rise) and anim_tris < batch_tris * 0.15,
+          f"{len(blk_rise)} animated blocks ({anim_tris:,} tris) vs "
+          f"{batch_tris:,} tris of static block field")
 
     # phases differ -> no synchronised movement
     starts = np.array([s[0, 1] for _n, s, _d in probes["blocks"]])
@@ -1143,17 +1269,65 @@ def validate(path: str) -> int:
                   if "scale" in nd and min(abs(v) for v in nd["scale"]) < 1e-6]
     check("no degenerate node scales", not degenerate)
 
-    # 12. reuse / efficiency
-    accessor_users: dict[int, int] = {}
-    for m in meshes:
-        for p in m["primitives"]:
-            accessor_users[p["attributes"]["POSITION"]] = \
-                accessor_users.get(p["attributes"]["POSITION"], 0) + 1
-    reuse = len(mesh_nodes) / max(len(accessor_users), 1)
-    check("geometry is instanced, not duplicated",
-          len(accessor_users) <= 8 and reuse > 500,
-          f"{len(accessor_users)} unique POSITION accessors shared by "
-          f"{len(mesh_nodes):,} nodes ({reuse:.0f}x reuse)")
+    # 12. mobile budget: draw calls, index width, light count
+    check("draw calls within a mobile budget", draw_calls <= 700,
+          f"{draw_calls} primitives ({len(batch_nodes)} batched city meshes + "
+          f"{len(anim_block_nodes)} animated blocks + suns/environment)")
+
+    oversized = [(m.get("name"), gltf["accessors"][p["attributes"]["POSITION"]]["count"])
+                 for m in meshes for p in m["primitives"]
+                 if gltf["accessors"][p["indices"]]["componentType"] == USHORT
+                 and gltf["accessors"][p["attributes"]["POSITION"]]["count"] > 65536]
+    check("16-bit indices stay in range", not oversized,
+          "every primitive under 65,536 vertices" if not oversized else str(oversized))
+
+    check("light count within a mobile budget", len(lights) <= 14,
+          f"{len(point_lights)} point + {len(lights) - len(point_lights)} directional")
+
+    blend_prims = sum(1 for nd in mesh_nodes for p in meshes[nd["mesh"]]["primitives"]
+                      if mats[p["material"]].get("alphaMode") == "BLEND")
+    two_sided = [m.get("name") for m in mats
+                 if m.get("alphaMode") == "BLEND" and m.get("doubleSided")]
+    check("translucent glow is single-sided (overdraw)", not two_sided,
+          f"{blend_prims} blended primitives, none double-sided")
+
+    # Marketplace/mobile viewers auto-frame the bounding box and ignore embedded
+    # cameras, so the environment must not dwarf the city.
+    box = {"full": [None, None], "city": [None, None]}
+
+    def accumulate(key, lo, hi):
+        cur = box[key]
+        cur[0] = lo if cur[0] is None else np.minimum(cur[0], lo)
+        cur[1] = hi if cur[1] is None else np.maximum(cur[1], hi)
+
+    def walk(index, parent, in_env):
+        nd = nodes[index]
+        mtx = parent @ _node_matrix(nd)
+        in_env = in_env or nd.get("name") in ("SkyDome", "GroundVoid")
+        if "mesh" in nd:
+            for p in meshes[nd["mesh"]]["primitives"]:
+                acc = gltf["accessors"][p["attributes"]["POSITION"]]
+                corners = np.array([[x, y, z] for x in (acc["min"][0], acc["max"][0])
+                                    for y in (acc["min"][1], acc["max"][1])
+                                    for z in (acc["min"][2], acc["max"][2])])
+                world = (mtx[:3, :3] @ corners.T).T + mtx[:3, 3]
+                accumulate("full", world.min(0), world.max(0))
+                if not in_env:
+                    accumulate("city", world.min(0), world.max(0))
+        for child in nd.get("children", []):
+            walk(child, mtx, in_env)
+
+    for root in gltf["scenes"][gltf["scene"]]["nodes"]:
+        walk(root, np.eye(4), False)
+    full_r = float(np.linalg.norm(box["full"][1] - box["full"][0]) / 2)
+    city_r = float(np.linalg.norm(box["city"][1] - box["city"][0]) / 2)
+    check("auto-framing shows the city, not the environment", full_r < city_r * 2.6,
+          f"scene radius {full_r:.0f} vs city radius {city_r:.0f} "
+          f"(city spans {city_r / full_r * 100:.0f}% of the framed volume)")
+
+    sky = next((m for m in mats if m.get("name") == "SkyDome"), {})
+    check("sky dome invisible from outside", sky.get("doubleSided") is False,
+          "inward-facing single-sided dome")
 
     check("cameras present", len(gltf.get("cameras", [])) >= 1,
           ", ".join(c["name"] for c in gltf.get("cameras", [])))
@@ -1167,16 +1341,80 @@ def validate(path: str) -> int:
     return 1 if failed else 0
 
 
+# ---------------------------------------------------------------------------
+# NFT metadata (ERC-721 / ERC-1155 "OpenSea" JSON schema)
+# ---------------------------------------------------------------------------
+
+CID_PLACEHOLDER = "REPLACE_WITH_YOUR_CID"
+
+
+def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> dict:
+    """Traits are derived from the scene that was actually generated."""
+    def num(name, value):
+        return {"trait_type": name, "value": value, "display_type": "number"}
+
+    meta = {
+        "name": "Digital City — Animated Block Landscape",
+        "description": (
+            "A procedurally generated digital landscape: "
+            f"{stats['static_blocks_batched'] + stats['animated_blocks']:,} rectangular "
+            f"blocks and plaza tiles forming a dense algorithmic terrain, lit by "
+            f"{stats['suns']} floating golden suns. "
+            f"{stats['animated_blocks']} of the blocks continuously rise and fall, and "
+            "every sun drifts on its own multi-frequency path, on a seamless "
+            f"{stats['loop_seconds']:.0f}-second loop baked into the glTF animation "
+            "tracks. Fully on-chain-friendly: a single self-contained binary glTF "
+            "(GLB) with no external textures or dependencies. Terrain, colours, "
+            "heights and motion are all generated from deterministic seed "
+            f"{stats['seed']}."
+        ),
+        "image": f"ipfs://{CID_PLACEHOLDER}/{image_name}",
+        "animation_url": f"ipfs://{CID_PLACEHOLDER}/{glb_name}",
+        "background_color": "0B0B10",
+        "attributes": [
+            {"trait_type": "Medium", "value": "Animated 3D (glTF 2.0 binary)"},
+            {"trait_type": "Generation", "value": "Procedural / deterministic seed"},
+            {"trait_type": "Palette", "value": "Greyscale with six accents"},
+            {"trait_type": "Accent Colours",
+             "value": "Red, Blue, Green, Lime, Magenta, Cyan"},
+            {"trait_type": "Motion", "value": "Seamless loop"},
+            {"trait_type": "Terrain Grid", "value": stats["grid"]},
+            num("Blocks", stats["static_blocks_batched"] + stats["animated_blocks"]),
+            num("Animated Blocks", stats["animated_blocks"]),
+            num("Suns", stats["suns"]),
+            num("Sun Lights", stats["sun_lights"]),
+            num("Loop Seconds", int(stats["loop_seconds"])),
+            num("Triangles", stats["triangles"]),
+            num("Draw Calls", stats["draw_calls"]),
+            num("Cameras", len(stats["cameras"])),
+            num("Seed", stats["seed"]),
+        ],
+    }
+    with open(path, "w") as fh:
+        json.dump(meta, fh, indent=2)
+        fh.write("\n")
+    return meta
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--output", default="digital_city_animated.glb")
+    ap.add_argument("--metadata", default="digital_city_animated.metadata.json",
+                    help="NFT metadata JSON to write alongside the GLB")
+    ap.add_argument("--preview", default="digital_city_preview.png",
+                    help="preview image filename referenced by the metadata")
     ap.add_argument("--validate-only", action="store_true",
                     help="skip generation, just validate an existing GLB")
     args = ap.parse_args()
     if not args.validate_only:
         stats = build_scene(args.output)
+        stats["seed"] = SEED
         print(json.dumps(stats, indent=2))
-        print(f"\nwrote {args.output} ({stats['file_bytes'] / 1_048_576:.2f} MiB)\n")
+        print(f"\nwrote {args.output} ({stats['file_bytes'] / 1_048_576:.2f} MiB)")
+        write_metadata(args.metadata, os.path.basename(args.output),
+                       os.path.basename(args.preview), stats)
+        print(f"wrote {args.metadata} "
+              f"(replace {CID_PLACEHOLDER} with your pinned CID)\n")
     print(f"validating {args.output}")
     raise SystemExit(validate(args.output))
 
