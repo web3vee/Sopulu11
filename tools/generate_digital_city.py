@@ -84,34 +84,6 @@ CAMERAS = [
 ]
 CAM_CLEAR_RADIUS = 16.0    # world units around each eye kept clear of spikes
 
-# Wireframe gizmos, built as real geometry so they render in any viewer rather
-# than only inside an editor: octahedral markers on the suns, camera frustums
-# and directional-light rays.
-WIRE_RADIUS = 0.09         # static gizmo wires, world units
-DIAMOND_RADIUS = 0.055     # in unit-diamond space; scaled per sun
-DIAMOND_SCALE = 2.4        # diamond size relative to the sun core
-FRUSTUM_ASPECT = 1.6
-# Deliberately NOT anchored to the render cameras: a camera sits inside its own
-# frustum, so its gizmo would project exactly onto the frame border and draw a
-# glowing rectangle around the viewport. These are standalone survey markers,
-# placed away from every camera eye. (eye, target, yfov_deg, near, far)
-GIZMO_FRUSTUMS = [
-    ((136.0, 66.0, -106.0), (0.0, 6.0, 4.0), 46.0, 10.0, 120.0),
-    ((-148.0, 58.0, -92.0), (12.0, 5.0, 18.0), 42.0, 10.0, 130.0),
-    ((92.0, 94.0, 128.0), (-24.0, 4.0, -28.0), 38.0, 10.0, 125.0),
-]
-LIGHT_RAY_ANCHORS = [(-118.0, 96.0, 92.0), (128.0, 74.0, -96.0), (-96.0, 68.0, -118.0)]
-LIGHT_RAY_LENGTH = 240.0
-
-# name, colour, intensity (lux), direction. The key is deliberately steep: in the
-# references block tops read bright while the sides fall away to near-black,
-# which needs top-down light and only a whisper of side fill.
-FILL_LIGHTS = [
-    ("AmbientFillKey", [0.66, 0.74, 0.92], 1.45, (-0.20, -1.0, -0.28)),
-    ("AmbientFillSide", [0.40, 0.46, 0.66], 0.30, (0.62, -0.34, 0.70)),
-    ("AmbientFillRim", [0.34, 0.40, 0.60], 0.16, (-0.70, -0.30, 0.62)),
-]
-
 # glTF component types
 UBYTE, USHORT, UINT, FLOAT = 5121, 5123, 5125, 5126
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
@@ -308,68 +280,6 @@ def icosphere(subdiv: int, inward: bool = False):
     if inward:                                   # flip winding for inside-out shell
         tri = tri[:, ::-1].copy()
     return pos, nrm, tri.reshape(-1)
-
-
-def wire_tube(segments, radius: float):
-    """Square-section tubes along each (p0, p1) segment.
-
-    Real triangle geometry rather than glTF LINES primitives: line mode has no
-    controllable width (always one device pixel) and is skipped by some
-    importers, Blender's among them.
-    """
-    pos, nrm, idx = [], [], []
-    for p0, p1 in segments:
-        p0 = np.asarray(p0, dtype=np.float64)
-        p1 = np.asarray(p1, dtype=np.float64)
-        axis = p1 - p0
-        length = np.linalg.norm(axis)
-        if length < 1e-9:
-            continue
-        axis = axis / length
-        ref = np.array([0.0, 1.0, 0.0]) if abs(axis[1]) < 0.9 else np.array([1.0, 0.0, 0.0])
-        u = _norm(np.cross(axis, ref))
-        v = np.cross(axis, u)
-        for a, b in ((u, v), (v, -u), (-u, -v), (-v, u)):
-            normal = _norm(a + b)
-            base = len(pos)
-            for corner in (p0 + a * radius, p0 + b * radius,
-                           p1 + b * radius, p1 + a * radius):
-                pos.append(corner)
-                nrm.append(normal)
-            idx += [base, base + 1, base + 2, base, base + 2, base + 3]
-    return (np.array(pos, dtype=np.float32), np.array(nrm, dtype=np.float32),
-            np.array(idx, dtype=np.uint16))
-
-
-def diamond_edges(scale: float = 1.0):
-    """The 12 edges of an octahedron — the classic point-light gizmo shape."""
-    verts = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
-    opposite = {0: 1, 1: 0, 2: 3, 3: 2, 4: 5, 5: 4}
-    return [(np.array(verts[i]) * scale, np.array(verts[j]) * scale)
-            for i in range(6) for j in range(i + 1, 6) if opposite[i] != j]
-
-
-def frustum_edges(eye, target, yfov: float, near: float, far: float, aspect: float):
-    """Near rect, far rect and the four apex rays — a camera gizmo."""
-    eye = np.asarray(eye, dtype=np.float64)
-    fwd = _norm(np.asarray(target, dtype=np.float64) - eye)
-    right = _norm(np.cross(fwd, np.array([0.0, 1.0, 0.0])))
-    up = np.cross(right, fwd)
-
-    def rect(dist):
-        hh = math.tan(yfov * 0.5) * dist
-        hw = hh * aspect
-        centre = eye + fwd * dist
-        return [centre + up * hh - right * hw, centre + up * hh + right * hw,
-                centre - up * hh + right * hw, centre - up * hh - right * hw]
-
-    nr, fr = rect(near), rect(far)
-    segs = []
-    for i in range(4):
-        segs.append((nr[i], nr[(i + 1) % 4]))
-        segs.append((fr[i], fr[(i + 1) % 4]))
-        segs.append((eye, fr[i]))
-    return segs
 
 
 def ground_quad():
@@ -606,16 +516,6 @@ def build_scene(out_path: str) -> dict:
         for i, (_scale, alpha, strength) in enumerate(SUN_SHELLS)
     ]
 
-    # Gizmo wires: emissive so they glow and catch bloom like the suns, and
-    # double-sided because a thin tube's winding should never make it vanish.
-    def wire_material(name, rgb, strength):
-        idx = emissive_material(name, rgb, strength)
-        glb.materials[idx]["doubleSided"] = True
-        return idx
-
-    mat_wire_amber = wire_material("WireAmber", (255, 172, 46), 2.6)
-    mat_wire_pale = wire_material("WirePale", (255, 232, 198), 2.2)
-
     mat_ground = glb.add_material({
         "name": "GroundVoid",
         "pbrMetallicRoughness": {"baseColorFactor": lin(9, 10, 13),
@@ -664,22 +564,6 @@ def build_scene(out_path: str) -> dict:
 
     mesh_sun_core = sphere_mesh("SunCoreMesh", mat_sun_core)
     mesh_sun_shells = [sphere_mesh(f"SunGlow{i}Mesh", m) for i, m in enumerate(mat_sun_shells)]
-
-    def wire_mesh(name, segments, radius, material):
-        wpos, wnrm, widx = wire_tube(segments, radius)
-        return glb.add_mesh({
-            "name": name,
-            "primitives": [{
-                "attributes": {"POSITION": glb.add_float_accessor(wpos, "VEC3", True),
-                               "NORMAL": glb.add_float_accessor(wnrm, "VEC3")},
-                "indices": glb.add_accessor(
-                    glb.add_view(widx.tobytes(), ELEMENT_ARRAY_BUFFER),
-                    USHORT, len(widx), "SCALAR"),
-                "material": material}]}), len(widx) // 3
-
-    # One unit diamond, reused (and animated) by every sun.
-    mesh_diamond, tris_diamond = wire_mesh("SunDiamondMesh", diamond_edges(1.0),
-                                           DIAMOND_RADIUS, mat_wire_pale)
 
     gpos, gnrm, gidx = ground_quad()
     mesh_ground = glb.add_mesh({
@@ -1059,9 +943,7 @@ def build_scene(out_path: str) -> dict:
 
         group = glb.add_node(name=f"Sun_{k:02d}", translation=[round(cx, 3), round(cy, 3), round(cz, 3)])
         children = [glb.add_node(name=f"Sun_{k:02d}_Core", mesh=mesh_sun_core,
-                                 scale=[round(radius, 4)] * 3),
-                    glb.add_node(name=f"Sun_{k:02d}_Diamond", mesh=mesh_diamond,
-                                 scale=[round(radius * DIAMOND_SCALE, 4)] * 3)]
+                                 scale=[round(radius, 4)] * 3)]
         for si, (scale, _a, _s) in enumerate(SUN_SHELLS):
             children.append(glb.add_node(
                 name=f"Sun_{k:02d}_Halo{si}", mesh=mesh_sun_shells[si],
@@ -1094,7 +976,11 @@ def build_scene(out_path: str) -> dict:
     # while the sides fall away to near-black, which needs top-down light and
     # only a whisper of side fill.
     fill_nodes = []
-    for fname, colour, intensity, direction in FILL_LIGHTS:
+    for fname, colour, intensity, direction in [
+        ("AmbientFillKey", [0.66, 0.74, 0.92], 1.45, (-0.20, -1.0, -0.28)),
+        ("AmbientFillSide", [0.40, 0.46, 0.66], 0.30, (0.62, -0.34, 0.70)),
+        ("AmbientFillRim", [0.34, 0.40, 0.60], 0.16, (-0.70, -0.30, 0.62)),
+    ]:
         glb.lights.append({"name": fname, "type": "directional",
                            "color": colour, "intensity": intensity})
         fill_nodes.append(glb.add_node(
@@ -1115,24 +1001,6 @@ def build_scene(out_path: str) -> dict:
             translation=[round(float(v), 3) for v in eye],
             rotation=look_at_quat(eye, target)))
 
-    # ---------------- gizmo wires ----------------
-    # Static, so every frustum and light ray welds into one mesh: 1 draw call.
-    gizmo_segments = []
-    for eye, target, yfov_deg, near, far in GIZMO_FRUSTUMS:
-        gizmo_segments += frustum_edges(eye, target, math.radians(yfov_deg),
-                                        near, far, FRUSTUM_ASPECT)
-        gizmo_segments += [(np.asarray(eye) + a, np.asarray(eye) + b)
-                           for a, b in diamond_edges(2.2)]
-    for anchor, (_fname, _c, _i, direction) in zip(LIGHT_RAY_ANCHORS, FILL_LIGHTS):
-        start = np.asarray(anchor, dtype=np.float64)
-        ray = _norm(direction) * LIGHT_RAY_LENGTH
-        gizmo_segments.append((start, start + ray))
-        gizmo_segments += [(start + a, start + b) for a, b in diamond_edges(2.6)]
-
-    mesh_gizmo, tris_gizmo = wire_mesh("GizmoWires", gizmo_segments,
-                                       WIRE_RADIUS, mat_wire_amber)
-    gizmo_node = glb.add_node(name="GizmoWires", mesh=mesh_gizmo)
-
     # ---------------- environment ----------------
     # Dropped well below the block feet so every seam reads as black void rather
     # than as a lit surface, and so risen blocks show a dark slot underneath.
@@ -1147,11 +1015,9 @@ def build_scene(out_path: str) -> dict:
     suns_node = glb.add_node(name="Suns", children=sun_group_nodes)
     lighting_node = glb.add_node(name="FillLighting", children=fill_nodes)
     cameras_node = glb.add_node(name="Cameras", children=camera_nodes)
-    gizmos_node = glb.add_node(name="Gizmos", children=[gizmo_node])
     env_node = glb.add_node(name="Environment", children=[ground, sky])
     root = glb.add_node(name="DigitalCity",
-                        children=[terrain_node, suns_node, lighting_node, cameras_node,
-                                  gizmos_node, env_node])
+                        children=[terrain_node, suns_node, lighting_node, cameras_node, env_node])
 
     # ---------------- animations ----------------
     # [0] combined (many viewers autoplay only the first clip),
@@ -1162,7 +1028,7 @@ def build_scene(out_path: str) -> dict:
         baker.make_animation("BlocksRise", ("blocks",)),
     ]
 
-    sun_draws = len(sun_group_nodes) * (2 + len(SUN_SHELLS))   # core + diamond + shells
+    sun_draws = len(sun_group_nodes) * (1 + len(SUN_SHELLS))
     stats.update({
         "grid": f"{n}x{n}",
         "static_blocks_batched": len(records) - n_anim,
@@ -1174,11 +1040,8 @@ def build_scene(out_path: str) -> dict:
         "loop_seconds": LOOP,
         "total_nodes": len(glb.nodes),
         "triangles": merged_faces * 2 + n_anim * 12
-                     + len(sun_group_nodes) * ((1 + len(SUN_SHELLS)) * (len(sidx) // 3)
-                                                + tris_diamond)
-                     + tris_gizmo + len(didx) // 3 + 2,
-        "draw_calls": draw_calls + n_anim + sun_draws + 3,
-        "gizmo_triangles": len(sun_group_nodes) * tris_diamond + tris_gizmo,
+                     + sun_draws * (len(sidx) // 3) + len(didx) // 3 + 2,
+        "draw_calls": draw_calls + n_anim + sun_draws + 2,
         "amp_min": round(min(anim_amplitudes), 2),
         "amp_max": round(max(anim_amplitudes), 2),
     })
@@ -1515,7 +1378,6 @@ def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> di
             {"trait_type": "Accent Colours",
              "value": "Red, Blue, Green, Lime, Magenta, Cyan"},
             {"trait_type": "Motion", "value": "Seamless loop"},
-            {"trait_type": "Overlay", "value": "Wireframe survey gizmos"},
             {"trait_type": "Terrain Grid", "value": stats["grid"]},
             num("Blocks", stats["static_blocks_batched"] + stats["animated_blocks"]),
             num("Animated Blocks", stats["animated_blocks"]),

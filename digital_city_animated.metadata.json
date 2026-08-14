@@ -26,10 +26,6 @@
       "value": "Seamless loop"
     },
     {
-      "trait_type": "Overlay",
-      "value": "Wireframe survey gizmos"
-    },
-    {
       "trait_type": "Terrain Grid",
       "value": "108x108"
     },
@@ -60,12 +56,12 @@
     },
     {
       "trait_type": "Triangles",
-      "value": 113366,
+      "value": 110750,
       "display_type": "number"
     },
     {
       "trait_type": "Draw Calls",
-      "value": 445,
+      "value": 426,
       "display_type": "number"
     },
     {
