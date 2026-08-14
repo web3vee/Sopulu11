@@ -12,7 +12,8 @@ inside the single file, with no external `.bin`, textures or side-car assets.
 |---|---|
 | `digital_city_animated.glb` | the artwork — one self-contained binary |
 | `digital_city_animated.metadata.json` | NFT metadata (edit the CID placeholders) |
-| `digital_city_preview.png` | 1400×1400 still for the metadata `image` field |
+| `digital_city_preview.png` | 2000×2000 still for the metadata `image` field |
+| `digital_city_preview_wide.png` | 2000×2000 alternate angle |
 | `tools/generate_digital_city.py` | generator + validator |
 
 ## How the scene was generated
@@ -265,6 +266,18 @@ Notes:
 - **Viewers that autoplay only the first clip** will play `DigitalCity_AllMotion`,
   which is why it is ordered first. A viewer that plays *all* clips at once will
   double-apply the sun and block tracks; select a single clip if you see that.
+
+## Still images
+
+The GLB itself has no resolution — it is geometry, not pixels; on-screen
+sharpness comes from the viewer's own resolution and anti-aliasing.
+
+The bundled stills are rendered at 3000×3000 with 8× MSAA and a half-float
+render target, then LANCZOS-downsampled to 2000×2000. Rendering above the target
+size and downsampling is what removes the stair-stepping on block edges; note
+that a renderer's `antialias: true` flag does **nothing** when drawing through a
+post-processing chain, because that draws into an offscreen render target which
+needs its own `samples` setting.
 
 ## Validation
 
