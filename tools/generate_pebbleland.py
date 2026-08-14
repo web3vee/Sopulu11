@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Procedural generator for `digital_city_animated.glb`.
+Procedural generator for `pebbleland_animated.glb`.
 
 Builds a dense, blocky "digital landscape" (terrain/city of rectangular blocks,
 flat tile plazas, floating glowing suns) and writes it as a single self-contained
@@ -17,7 +17,7 @@ Animation is baked as CUBICSPLINE keyframes with analytic tangents. Every motion
 component is a sum of sinusoids whose periods divide the loop length exactly, so
 the first and last keyframe agree in both value and derivative -> seamless loop.
 
-Usage:  python3 tools/generate_digital_city.py [-o digital_city_animated.glb]
+Usage:  python3 tools/generate_pebbleland.py [-o pebbleland_animated.glb]
 """
 
 from __future__ import annotations
@@ -359,7 +359,7 @@ class GLBBuilder:
         gltf = {
             "asset": {"version": "2.0", "generator": generator},
             "scene": 0,
-            "scenes": [{"name": "DigitalCity", "nodes": scene_roots}],
+            "scenes": [{"name": "Pebbleland", "nodes": scene_roots}],
             "nodes": self.nodes,
             "meshes": self.meshes,
             "materials": self.materials,
@@ -859,8 +859,8 @@ def build_scene(out_path: str) -> dict:
                     USHORT, len(idx), "SCALAR"),
                 "material": MAT_IDX[mat_name]})
         draw_calls += len(prims)
-        mesh = glb.add_mesh({"name": f"CityBatch_{mat_name}", "primitives": prims})
-        batch_nodes.append(glb.add_node(name=f"CityBatch_{mat_name}", mesh=mesh))
+        mesh = glb.add_mesh({"name": f"PebbleBatch_{mat_name}", "primitives": prims})
+        batch_nodes.append(glb.add_node(name=f"PebbleBatch_{mat_name}", mesh=mesh))
 
     # ---------------- animation: rising / falling blocks ----------------
     baker = AnimationBaker(glb)
@@ -1016,14 +1016,14 @@ def build_scene(out_path: str) -> dict:
     lighting_node = glb.add_node(name="FillLighting", children=fill_nodes)
     cameras_node = glb.add_node(name="Cameras", children=camera_nodes)
     env_node = glb.add_node(name="Environment", children=[ground, sky])
-    root = glb.add_node(name="DigitalCity",
+    root = glb.add_node(name="Pebbleland",
                         children=[terrain_node, suns_node, lighting_node, cameras_node, env_node])
 
     # ---------------- animations ----------------
     # [0] combined (many viewers autoplay only the first clip),
     # [1] suns only, [2] blocks only.
     glb.animations = [
-        baker.make_animation("DigitalCity_AllMotion", ("suns", "blocks")),
+        baker.make_animation("Pebbleland_AllMotion", ("suns", "blocks")),
         baker.make_animation("SunsFloat", ("suns",)),
         baker.make_animation("BlocksRise", ("blocks",)),
     ]
@@ -1046,8 +1046,8 @@ def build_scene(out_path: str) -> dict:
         "amp_max": round(max(anim_amplitudes), 2),
     })
 
-    extras = {"generator": "tools/generate_digital_city.py", "seed": SEED, "stats": stats}
-    gltf = glb.build_gltf([root], "digital_city procedural generator (python/numpy)", extras)
+    extras = {"generator": "tools/generate_pebbleland.py", "seed": SEED, "stats": stats}
+    gltf = glb.build_gltf([root], "Pebbleland procedural generator (python/numpy)", extras)
     size = glb.write_glb(out_path, gltf)
     stats["file_bytes"] = size
     stats["cameras"] = [c["name"] for c in glb.cameras]
@@ -1145,13 +1145,13 @@ def validate(path: str) -> int:
         for prim in meshes[nd["mesh"]]["primitives"]:
             tris += gltf["accessors"][prim["indices"]]["count"] // 3
             draw_calls += 1
-    batch_nodes = [nd for nd in mesh_nodes if nd.get("name", "").startswith("CityBatch_")]
+    batch_nodes = [nd for nd in mesh_nodes if nd.get("name", "").startswith("PebbleBatch_")]
     anim_block_nodes = [nd for nd in mesh_nodes if nd.get("name", "").startswith("AnimBlock_")]
     batch_tris = sum(gltf["accessors"][p["indices"]]["count"] // 3
                      for nd in batch_nodes for p in meshes[nd["mesh"]]["primitives"])
     check("geometry present", tris > 50000 and len(batch_nodes) > 5,
           f"{tris:,} triangles across {draw_calls} primitives, "
-          f"{len(batch_nodes)} batched city meshes, {len(mesh_nodes)} mesh nodes")
+          f"{len(batch_nodes)} batched terrain meshes, {len(mesh_nodes)} mesh nodes")
 
     # 3. materials, all referenced and complete
     mats = gltf.get("materials", [])
@@ -1198,7 +1198,7 @@ def validate(path: str) -> int:
     name_of = {i: nd.get("name", "") for i, nd in enumerate(nodes)}
     probes = {"suns": [], "blocks": []}
     for anim in anims:
-        if anim["name"] != "DigitalCity_AllMotion":
+        if anim["name"] != "Pebbleland_AllMotion":
             continue
         for ch in anim["channels"]:
             smp = anim["samplers"][ch["sampler"]]
@@ -1271,7 +1271,7 @@ def validate(path: str) -> int:
 
     # 12. mobile budget: draw calls, index width, light count
     check("draw calls within a mobile budget", draw_calls <= 700,
-          f"{draw_calls} primitives ({len(batch_nodes)} batched city meshes + "
+          f"{draw_calls} primitives ({len(batch_nodes)} batched terrain meshes + "
           f"{len(anim_block_nodes)} animated blocks + suns/environment)")
 
     oversized = [(m.get("name"), gltf["accessors"][p["attributes"]["POSITION"]]["count"])
@@ -1321,9 +1321,9 @@ def validate(path: str) -> int:
         walk(root, np.eye(4), False)
     full_r = float(np.linalg.norm(box["full"][1] - box["full"][0]) / 2)
     city_r = float(np.linalg.norm(box["city"][1] - box["city"][0]) / 2)
-    check("auto-framing shows the city, not the environment", full_r < city_r * 2.6,
-          f"scene radius {full_r:.0f} vs city radius {city_r:.0f} "
-          f"(city spans {city_r / full_r * 100:.0f}% of the framed volume)")
+    check("auto-framing shows Pebbleland, not the environment", full_r < city_r * 2.6,
+          f"scene radius {full_r:.0f} vs terrain radius {city_r:.0f} "
+          f"(terrain spans {city_r / full_r * 100:.0f}% of the framed volume)")
 
     sky = next((m for m in mats if m.get("name") == "SkyDome"), {})
     check("sky dome invisible from outside", sky.get("doubleSided") is False,
@@ -1354,19 +1354,18 @@ def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> di
         return {"trait_type": name, "value": value, "display_type": "number"}
 
     meta = {
-        "name": "Digital City — Animated Block Landscape",
+        "name": "Pebbleland",
         "description": (
-            "A procedurally generated digital landscape: "
-            f"{stats['static_blocks_batched'] + stats['animated_blocks']:,} rectangular "
-            f"blocks and plaza tiles forming a dense algorithmic terrain, lit by "
+            "Pebbleland — a procedurally generated landscape of "
+            f"{stats['static_blocks_batched'] + stats['animated_blocks']:,} pebble-like "
+            "blocks and plaza tiles, drifting under "
             f"{stats['suns']} floating golden suns. "
-            f"{stats['animated_blocks']} of the blocks continuously rise and fall, and "
-            "every sun drifts on its own multi-frequency path, on a seamless "
+            f"{stats['animated_blocks']} of the pebbles continuously rise and fall, and "
+            "every sun wanders on its own multi-frequency path, on a seamless "
             f"{stats['loop_seconds']:.0f}-second loop baked into the glTF animation "
-            "tracks. Fully on-chain-friendly: a single self-contained binary glTF "
-            "(GLB) with no external textures or dependencies. Terrain, colours, "
-            "heights and motion are all generated from deterministic seed "
-            f"{stats['seed']}."
+            "tracks. A single self-contained binary glTF (GLB) with no external "
+            "textures or dependencies. Terrain, colours, heights and motion are all "
+            f"generated from deterministic seed {stats['seed']}."
         ),
         "image": f"ipfs://{CID_PLACEHOLDER}/{image_name}",
         "animation_url": f"ipfs://{CID_PLACEHOLDER}/{glb_name}",
@@ -1398,10 +1397,10 @@ def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> di
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-o", "--output", default="digital_city_animated.glb")
-    ap.add_argument("--metadata", default="digital_city_animated.metadata.json",
+    ap.add_argument("-o", "--output", default="pebbleland_animated.glb")
+    ap.add_argument("--metadata", default="pebbleland_animated.metadata.json",
                     help="NFT metadata JSON to write alongside the GLB")
-    ap.add_argument("--preview", default="digital_city_preview.png",
+    ap.add_argument("--preview", default="pebbleland_preview.png",
                     help="preview image filename referenced by the metadata")
     ap.add_argument("--validate-only", action="store_true",
                     help="skip generation, just validate an existing GLB")
