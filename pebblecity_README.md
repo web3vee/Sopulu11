@@ -17,6 +17,7 @@ side-car assets.
 | `pebblecity_preview_wide.png` | 2000×2000 alternate angle |
 | `pebblecity_loop.gif` | 512×512 animated loop, 120 frames @ 12fps |
 | `pebblecity_promo.mp4` | 1080×1080 promo cut for social, 22.5s |
+| `pebblecity_loop_1080.mp4` | 1080×1080 clean seamless loop, 24s real time |
 | `tools/generate_pebblecity.py` | generator + validator |
 
 ## How the scene was generated
@@ -283,6 +284,12 @@ no visible seam, exactly as the GLB does. It plays at 12 fps, i.e. about
 unaffected and still runs at true speed. A single global palette is generated
 across every frame rather than per frame, which keeps colours from shifting
 between frames and is what makes a 6.6 MB GIF possible at this size.
+
+`pebblecity_loop_1080.mp4` is the artwork itself as video: one static hero
+camera, no cuts, no titles, the full 24-second animation at true speed, 1080×1080
+at 24fps. It carries **no fades** — a fade would break the loop. The first frame
+is t=0 and the last is one step before t=24, so playback wraps with no duplicated
+frame and no stutter. Use this where a platform will not take the GLB.
 
 `pebblecity_promo.mp4` is a 22.5-second square cut at 1080×1080, 24fps, H.264
 in yuv420p with a silent AAC track — several social platforms reject a video
