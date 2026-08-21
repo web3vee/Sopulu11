@@ -15,6 +15,7 @@ side-car assets.
 | `pebbleland_animated.metadata.json` | NFT metadata (edit the CID placeholders) |
 | `pebbleland_preview.png` | 2000×2000 still for the metadata `image` field |
 | `pebbleland_preview_wide.png` | 2000×2000 alternate angle |
+| `pebbleland_loop.gif` | 512×512 animated loop, 120 frames @ 12fps |
 | `tools/generate_pebbleland.py` | generator + validator |
 
 ## How the scene was generated
@@ -87,7 +88,7 @@ the soft radial falloff has to be built by stacking shells.
 **Environment** — a near-black ground plane sits a unit below the block feet, so
 every seam reads as black void, and an inward-facing sky dome carries a
 vertex-coloured horizon gradient using `KHR_materials_unlit`. Both are sized to
-keep the scene's bounding sphere close to the city — see Performance.
+keep the scene's bounding sphere close to the terrain — see Performance.
 
 **Cameras** — three, in this order:
 
@@ -137,7 +138,7 @@ The scene is tuned so it runs on a phone, not just a desktop GPU.
 per-material batched meshes (one mesh per colour, split into primitives of
 ≤64,000 vertices so 16-bit indices stay valid). Only the 320 animated blocks
 remain individual nodes, because in glTF only a node can be animated. Draw
-calls break down as 14 batched city meshes + 320 animated blocks + 90 sun
+calls break down as 14 batched terrain meshes + 320 animated blocks + 90 sun
 primitives + 2 environment.
 
 **110,750 triangles**, down from 153,682, via two cuts that are invisible in
@@ -272,6 +273,15 @@ Notes:
 
 The GLB itself has no resolution — it is geometry, not pixels; on-screen
 sharpness comes from the viewer's own resolution and anti-aliasing.
+
+`pebbleland_loop.gif` samples the animation at 120 evenly spaced points
+across the full 24-second loop. The last frame lands one step *before* t=24 —
+whose frame is identical to t=0 — so the GIF loops with no duplicated frame and
+no visible seam, exactly as the GLB does. It plays at 12 fps, i.e. about
+2.4x real time, so the whole loop reads in a few seconds; the GLB itself is
+unaffected and still runs at true speed. A single global palette is generated
+across every frame rather than per frame, which keeps colours from shifting
+between frames and is what makes a 6.6 MB GIF possible at this size.
 
 The bundled stills are rendered at 3000×3000 with 8× MSAA and a half-float
 render target, then LANCZOS-downsampled to 2000×2000. Rendering above the target
