@@ -1,8 +1,8 @@
 {
-  "name": "Pebbleland",
-  "description": "Pebbleland \u2014 a procedurally generated landscape of 9,020 pebble-like blocks and plaza tiles, drifting under 18 floating golden suns. 320 of the pebbles continuously rise and fall, and every sun wanders on its own multi-frequency path, on a seamless 24-second loop baked into the glTF animation tracks. A single self-contained binary glTF (GLB) with no external textures or dependencies. Terrain, colours, heights and motion are all generated from deterministic seed 20260814.",
-  "image": "ipfs://REPLACE_WITH_YOUR_CID/pebbleland_preview.png",
-  "animation_url": "ipfs://REPLACE_WITH_YOUR_CID/pebbleland_animated.glb",
+  "name": "PebbleCity",
+  "description": "PebbleCity \u2014 a procedurally generated landscape of 9,020 pebble-like blocks, towers and plaza tiles, drifting under 18 floating golden suns. 320 of the pebbles continuously rise and fall, and every sun wanders on its own multi-frequency path, on a seamless 24-second loop baked into the glTF animation tracks. A single self-contained binary glTF (GLB) with no external textures or dependencies. Terrain, colours, heights and motion are all generated from deterministic seed 20260814.",
+  "image": "ipfs://REPLACE_WITH_YOUR_CID/pebblecity_preview.png",
+  "animation_url": "ipfs://REPLACE_WITH_YOUR_CID/pebblecity_animated.glb",
   "background_color": "0B0B10",
   "attributes": [
     {

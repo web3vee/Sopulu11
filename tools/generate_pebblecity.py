@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Procedural generator for `pebbleland_animated.glb`.
+Procedural generator for `pebblecity_animated.glb`.
 
 Builds a dense, blocky "digital landscape" (terrain/city of rectangular blocks,
 flat tile plazas, floating glowing suns) and writes it as a single self-contained
@@ -17,7 +17,7 @@ Animation is baked as CUBICSPLINE keyframes with analytic tangents. Every motion
 component is a sum of sinusoids whose periods divide the loop length exactly, so
 the first and last keyframe agree in both value and derivative -> seamless loop.
 
-Usage:  python3 tools/generate_pebbleland.py [-o pebbleland_animated.glb]
+Usage:  python3 tools/generate_pebblecity.py [-o pebblecity_animated.glb]
 """
 
 from __future__ import annotations
@@ -359,7 +359,7 @@ class GLBBuilder:
         gltf = {
             "asset": {"version": "2.0", "generator": generator},
             "scene": 0,
-            "scenes": [{"name": "Pebbleland", "nodes": scene_roots}],
+            "scenes": [{"name": "PebbleCity", "nodes": scene_roots}],
             "nodes": self.nodes,
             "meshes": self.meshes,
             "materials": self.materials,
@@ -1016,14 +1016,14 @@ def build_scene(out_path: str) -> dict:
     lighting_node = glb.add_node(name="FillLighting", children=fill_nodes)
     cameras_node = glb.add_node(name="Cameras", children=camera_nodes)
     env_node = glb.add_node(name="Environment", children=[ground, sky])
-    root = glb.add_node(name="Pebbleland",
+    root = glb.add_node(name="PebbleCity",
                         children=[terrain_node, suns_node, lighting_node, cameras_node, env_node])
 
     # ---------------- animations ----------------
     # [0] combined (many viewers autoplay only the first clip),
     # [1] suns only, [2] blocks only.
     glb.animations = [
-        baker.make_animation("Pebbleland_AllMotion", ("suns", "blocks")),
+        baker.make_animation("PebbleCity_AllMotion", ("suns", "blocks")),
         baker.make_animation("SunsFloat", ("suns",)),
         baker.make_animation("BlocksRise", ("blocks",)),
     ]
@@ -1046,8 +1046,8 @@ def build_scene(out_path: str) -> dict:
         "amp_max": round(max(anim_amplitudes), 2),
     })
 
-    extras = {"generator": "tools/generate_pebbleland.py", "seed": SEED, "stats": stats}
-    gltf = glb.build_gltf([root], "Pebbleland procedural generator (python/numpy)", extras)
+    extras = {"generator": "tools/generate_pebblecity.py", "seed": SEED, "stats": stats}
+    gltf = glb.build_gltf([root], "PebbleCity procedural generator (python/numpy)", extras)
     size = glb.write_glb(out_path, gltf)
     stats["file_bytes"] = size
     stats["cameras"] = [c["name"] for c in glb.cameras]
@@ -1198,7 +1198,7 @@ def validate(path: str) -> int:
     name_of = {i: nd.get("name", "") for i, nd in enumerate(nodes)}
     probes = {"suns": [], "blocks": []}
     for anim in anims:
-        if anim["name"] != "Pebbleland_AllMotion":
+        if anim["name"] != "PebbleCity_AllMotion":
             continue
         for ch in anim["channels"]:
             smp = anim["samplers"][ch["sampler"]]
@@ -1321,7 +1321,7 @@ def validate(path: str) -> int:
         walk(root, np.eye(4), False)
     full_r = float(np.linalg.norm(box["full"][1] - box["full"][0]) / 2)
     city_r = float(np.linalg.norm(box["city"][1] - box["city"][0]) / 2)
-    check("auto-framing shows Pebbleland, not the environment", full_r < city_r * 2.6,
+    check("auto-framing shows PebbleCity, not the environment", full_r < city_r * 2.6,
           f"scene radius {full_r:.0f} vs terrain radius {city_r:.0f} "
           f"(terrain spans {city_r / full_r * 100:.0f}% of the framed volume)")
 
@@ -1354,11 +1354,11 @@ def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> di
         return {"trait_type": name, "value": value, "display_type": "number"}
 
     meta = {
-        "name": "Pebbleland",
+        "name": "PebbleCity",
         "description": (
-            "Pebbleland — a procedurally generated landscape of "
+            "PebbleCity — a procedurally generated landscape of "
             f"{stats['static_blocks_batched'] + stats['animated_blocks']:,} pebble-like "
-            "blocks and plaza tiles, drifting under "
+            "blocks, towers and plaza tiles, drifting under "
             f"{stats['suns']} floating golden suns. "
             f"{stats['animated_blocks']} of the pebbles continuously rise and fall, and "
             "every sun wanders on its own multi-frequency path, on a seamless "
@@ -1397,10 +1397,10 @@ def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> di
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-o", "--output", default="pebbleland_animated.glb")
-    ap.add_argument("--metadata", default="pebbleland_animated.metadata.json",
+    ap.add_argument("-o", "--output", default="pebblecity_animated.glb")
+    ap.add_argument("--metadata", default="pebblecity_animated.metadata.json",
                     help="NFT metadata JSON to write alongside the GLB")
-    ap.add_argument("--preview", default="pebbleland_preview.png",
+    ap.add_argument("--preview", default="pebblecity_preview.png",
                     help="preview image filename referenced by the metadata")
     ap.add_argument("--validate-only", action="store_true",
                     help="skip generation, just validate an existing GLB")
