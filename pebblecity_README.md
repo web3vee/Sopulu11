@@ -16,6 +16,7 @@ side-car assets.
 | `pebblecity_preview.png` | 2000×2000 still for the metadata `image` field |
 | `pebblecity_preview_wide.png` | 2000×2000 alternate angle |
 | `pebblecity_loop.gif` | 512×512 animated loop, 120 frames @ 12fps |
+| `pebblecity_promo.mp4` | 1080×1080 promo cut for social, 22.5s |
 | `tools/generate_pebblecity.py` | generator + validator |
 
 ## How the scene was generated
@@ -282,6 +283,16 @@ no visible seam, exactly as the GLB does. It plays at 12 fps, i.e. about
 unaffected and still runs at true speed. A single global palette is generated
 across every frame rather than per frame, which keeps colours from shifting
 between frames and is what makes a 6.6 MB GIF possible at this size.
+
+`pebblecity_promo.mp4` is a 22.5-second square cut at 1080×1080, 24fps, H.264
+in yuv420p with a silent AAC track — several social platforms reject a video
+with no audio stream at all. It runs four shots (orbit reveal, hero camera,
+plaza, wide) and a title card.
+
+Each segment is encoded with its own fades and the results concatenated, rather
+than chaining fades in one filter graph. `fade=t=in` renders every frame *before*
+its start time black, so a second fade-in for the title card silently blacks out
+the whole film ahead of it.
 
 The bundled stills are rendered at 3000×3000 with 8× MSAA and a half-float
 render target, then LANCZOS-downsampled to 2000×2000. Rendering above the target
