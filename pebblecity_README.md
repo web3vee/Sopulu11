@@ -18,6 +18,7 @@ side-car assets.
 | `pebblecity_loop.gif` | 512×512 animated loop, 120 frames @ 12fps |
 | `pebblecity_promo.mp4` | 1080×1080 promo cut for social, 22.5s |
 | `pebblecity_loop_1080.mp4` | 1080×1080 clean seamless loop, 24s real time |
+| `pebblecity_interactive.html` | self-contained interactive build, 6.8 MB |
 | `tools/generate_pebblecity.py` | generator + validator |
 
 ## How the scene was generated
@@ -284,6 +285,27 @@ no visible seam, exactly as the GLB does. It plays at 12 fps, i.e. about
 unaffected and still runs at true speed. A single global palette is generated
 across every frame rather than per frame, which keeps colours from shifting
 between frames and is what makes a 6.6 MB GIF possible at this size.
+
+## Interactive HTML build
+
+`pebblecity_interactive.html` is the artwork as a single self-contained web
+page: three.js bundled in and the GLB inlined as base64, so the page makes
+**zero network requests** and renders inside a sandboxed iframe with no external
+origins allowed. It opens on the hero camera, plays the loop, and hands the
+viewer orbit controls — drag to look, scroll to zoom, with the polar angle
+clamped so you cannot fall beneath the ground plane.
+
+Rebuild it with:
+
+```bash
+node_modules/.bin/esbuild tools/interactive_entry.js --bundle --minify \
+  --format=iife --target=es2020 --outfile=<dir>/bundle.js
+PEBBLECITY_BUILD_DIR=<dir> python3 tools/build_interactive_html.py
+```
+
+Verified by loading it in headless Chromium inside `sandbox="allow-scripts"`
+with every non-local request aborted: it rendered, animated, and attempted no
+external request.
 
 `pebblecity_loop_1080.mp4` is the artwork itself as video: one static hero
 camera, no cuts, no titles, the full 24-second animation at true speed, 1080×1080
