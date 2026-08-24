@@ -204,6 +204,20 @@ a `<model-viewer>` page, or send it to a phone and open it with the OS 3D viewer
 (iOS Quick Look needs USDZ, so on iPhone use a browser-based viewer rather than
 the Files app preview).
 
+## Arweave transactions
+
+| Asset | TXID | sha256 of the local file |
+|---|---|---|
+| `pebblecity_interactive.html` | `abtMi42aNmsAbIGDnhB3ZseSd_3_PfBz5TNqz6VBaxU` | `9c4ac19c2bffcec3b819fa8ea800c3855309ce1949714929f9b749da0ce005c6` |
+| `pebblecity_animated.glb` | `e7c1UUqDZQQxPrSATihhgBx59iPcTL4zxPW8QwlsOQE` | `810e5fff0526925911853c6e82a5900d7cb4f5fd4c32328f59c7f24b38c7408c` |
+
+Neither upload has been fetched back and checked from this repo — the session
+that produced them had `arweave.net` blocked by egress policy. The hashes above
+are of the local files, for whoever can reach the gateway to compare against.
+
+`animation_url` points at the interactive HTML, since that is the renderable
+artwork; the GLB transaction is the raw model for anyone who wants it.
+
 ## Minting it as an NFT
 
 `pebblecity_animated.metadata.json` is a ready-to-use ERC-721 / ERC-1155
