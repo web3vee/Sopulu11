@@ -1348,8 +1348,14 @@ def validate(path: str) -> int:
 CID_PLACEHOLDER = "REPLACE_WITH_YOUR_CID"
 
 
-def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> dict:
-    """Traits are derived from the scene that was actually generated."""
+def write_metadata(path: str, glb_name: str, image_name: str, stats: dict,
+                   animation_url: str | None = None,
+                   image_url: str | None = None) -> dict:
+    """Traits are derived from the scene that was actually generated.
+
+    animation_url / image_url override the ipfs:// placeholders once the assets
+    are pinned somewhere permanent (Arweave, IPFS, ...).
+    """
     def num(name, value):
         return {"trait_type": name, "value": value, "display_type": "number"}
 
@@ -1367,8 +1373,8 @@ def write_metadata(path: str, glb_name: str, image_name: str, stats: dict) -> di
             "textures or dependencies. Terrain, colours, heights and motion are all "
             f"generated from deterministic seed {stats['seed']}."
         ),
-        "image": f"ipfs://{CID_PLACEHOLDER}/{image_name}",
-        "animation_url": f"ipfs://{CID_PLACEHOLDER}/{glb_name}",
+        "image": image_url or f"ipfs://{CID_PLACEHOLDER}/{image_name}",
+        "animation_url": animation_url or f"ipfs://{CID_PLACEHOLDER}/{glb_name}",
         "background_color": "0B0B10",
         "attributes": [
             {"trait_type": "Medium", "value": "Animated 3D (glTF 2.0 binary)"},
@@ -1402,6 +1408,10 @@ def main():
                     help="NFT metadata JSON to write alongside the GLB")
     ap.add_argument("--preview", default="pebblecity_preview.png",
                     help="preview image filename referenced by the metadata")
+    ap.add_argument("--animation-url",
+                    help="permanent URL for the GLB (e.g. https://arweave.net/<txid>)")
+    ap.add_argument("--image-url",
+                    help="permanent URL for the preview still")
     ap.add_argument("--validate-only", action="store_true",
                     help="skip generation, just validate an existing GLB")
     args = ap.parse_args()
@@ -1410,10 +1420,14 @@ def main():
         stats["seed"] = SEED
         print(json.dumps(stats, indent=2))
         print(f"\nwrote {args.output} ({stats['file_bytes'] / 1_048_576:.2f} MiB)")
-        write_metadata(args.metadata, os.path.basename(args.output),
-                       os.path.basename(args.preview), stats)
-        print(f"wrote {args.metadata} "
-              f"(replace {CID_PLACEHOLDER} with your pinned CID)\n")
+        meta = write_metadata(args.metadata, os.path.basename(args.output),
+                              os.path.basename(args.preview), stats,
+                              args.animation_url, args.image_url)
+        placeholders = [k for k in ("image", "animation_url")
+                        if CID_PLACEHOLDER in meta[k]]
+        note = (f"(still placeholder: {', '.join(placeholders)})" if placeholders
+                else "(all URLs set)")
+        print(f"wrote {args.metadata} {note}\n")
     print(f"validating {args.output}")
     raise SystemExit(validate(args.output))
 
